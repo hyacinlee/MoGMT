@@ -19,7 +19,8 @@ SUB_COMMANDS = {
     "Phenotype": "Phenotype",
     "Visualize": "Visualize",
     "Vcftools" : "Vcftools",
-    "BulkSegAna":"BulkSegAna"
+    "BulkSegAna":"BulkSegAna",
+    "TransAsso": "TransAsso"
 }
 
 def main():
@@ -39,6 +40,8 @@ def main():
         Visualize    :   The module for output Manhantun or other figures. 
 
         BulkSegAna   :   The module for perform Bulked Segregant Analysis use vcf files.
+
+        TransAsso    :   The module for perform Association analysis between gene expression matrix and phenotype in population.
         
     Date      : 2025-04-14
     Version   : 0.1
@@ -51,7 +54,13 @@ def main():
         choices=SUB_COMMANDS.keys(),
         help="Avaliable Functions",
     )
-    
+   
+    # add src to pathon libs 
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    src_dir = os.path.join(script_dir, 'src')
+    if src_dir not in sys.path:
+        sys.path.append(src_dir)
+ 
     if "-h" in sys.argv or "--help" in sys.argv:
         if len(sys.argv) == 2:
             parser.print_help()
@@ -76,11 +85,11 @@ def load_module(module_name):
         #print(os.path.exists("src/Emmax.py"))
         #module = importlib.import_module("src.Emmax")
         return module.main
-    except ImportError:
-        print(f"Error: module {module_name} not exist")
+    except ImportError as e1:
+        print(f"ImportError:\n{e1}")
         sys.exit(1)
-    except KeyError:
-        print(f"Error: unkonw sub-Function '{module_name}'")
+    except KeyError as e2:
+        print(f"KeyError:\n{e2}")
         sys.exit(1)
 
 

@@ -123,8 +123,8 @@ def process_vcf_phe(args):
                 ls = line.strip().split("\t")
                 if line.startswith("#CHR"):
                     vcf_samples = line.strip().split("\t")[9:]
-                elif not line.startswith("#")
-                    if not ls[2] == "."
+                elif not line.startswith("#"):
+                    if not ls[2] == ".":
                         fo.write(f"{ls[0]}\t{ls[1]}\t{ls[2]}\n")
                     else:
                         print(f"# There is no SNP-ID infomation cols in {args.vcf}, you can use the Vcftools module to add it")
