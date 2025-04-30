@@ -132,7 +132,7 @@ def main(args=None):
         if args.function:
             df_handle=add_function(df_handle,args.function)
         print(df_handle)
-        df_handle.to_csv(f"{out}.sign.Weight.genes.txt",sep="\t")
+        df_handle.to_csv(f"{out}.sign.Weight.genes.xls",sep="\t")
 
 
 def add_function(df,function_file):
