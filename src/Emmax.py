@@ -43,8 +43,10 @@ def main(args=None):
     #snps.set_index("snp_id", inplace=True)                 # panda df速度更慢
     #snps=Common.read_file("GWAS.map","dict",vals=[0,3],keys=[1])    
     #significant=Common.judge_significant(sign,snps)
+
     snps=Common.read_file("GWAS.snpID","dict",vals=[0,1],keys=[2])    
     significant=Common.judge_significant(args.sign,snps)
+
     with open("GWAS.threshold","w") as f:
         f.write(f"{significant}\n")
  
@@ -141,15 +143,17 @@ def process_vcf_phe(args):
         Common.run_command(f"{args.emmax}/emmax-kin-intel64 -v -d 10 GWAS")   # Generate kinship matrix
         Common.run_command(f"touch GWAS.prepared.done")
 
-    samples=Common.read_file("GWAS.sample","list",vals=[0])
+    samples=[x[0] for x in Common.read_file("GWAS.sample","list",vals=[0])]
     return samples
 
 
 def process_covariance(cov_file,samples):
     """Process structure/PCA file"""
-    cov_data=Common.read_file(cov_file,mode="list",vals=[]) # read cov without header
+    cov_data=Common.read_file(cov_file,mode="dict",keys=[0],vals=[]) # read cov without header
+    #print(cov_data)
     cov_data_new=[] 
-    for ls in cov_data:
+    for s in samples:
+        ls = cov_data[s]
         ls.insert(1,1)
         ls.insert(1,ls[0])
         cov_data_new.append(ls)
