@@ -22,26 +22,37 @@ def get_args(args):
     parser.add_argument("-p", "--phe",required=True, help="Path of the input phenotype file",type=str)
     parser.add_argument("-v", "--vcf",required=True, help='vcf file in bgzip format and has bcftools-csi index',type=str)
     parser.add_argument("-a", "--annovar",required=True,help='Prefix of snp Annovar result file, *variant_function and *exonic_variant_function',type=str)
+    parser.add_argument("-b","--bed",required=True,help="Table split bed file of gene or mRNA with at least 5 column: Chrom start end strand gene_name",type=str)
     parser.add_argument("-f", "--function",help='Function Annotation of Genes. Support multi-column information, but the first column must be the gene name and include the table header',type=str)
-    #parser.add_argument("-s", "--sign",help="Significance cut line: B = 1/n || F = 0.05/n || a self-defined float",default="B")
+    parser.add_argument("-e", "--eQTL",help='Known eQTLs results file in SNPs -- Gens formats',type=str)
     parser.add_argument("-o", "--out",help="Prefix of outfiles",type=str,default="Evi")
     parser.add_argument("-w", "--weight",help='Other evidence with weight',type=str)
     parser.add_argument("--chrom",help="The column of Chromosom name in the inputfile",type=str,default="CHROM") 
     parser.add_argument("--pos",help="The column of Maker pos in the inputfile",type=str,default="POS")
     parser.add_argument("--value",help="The column of Value in the inputfile",type=str,default="P")
     parser.add_argument("--name",help="The column of SNP id in the inputfile",type=str,default="ID")
-    parser.add_argument("--bed",help="Table split bed file of gene or mRNA with at least 5 column: Chrom start end strand gene_name, required if loci type file exist in --weight",type=str,default=None)
+    parser.add_argument("--min_sites",help="The minimum number of Candidata SNPs in the input file",type=int,default=5)
+    parser.add_argument("--eQTL_score",help="The weights score of eQTL SNPs",type=int,default=3)
+    parser.add_argument("--regions",help="The range size between the leader-SNPs and candidate genes, in Kb",nargs="+",default=[1])
+    parser.add_argument("--regions_score",help="The weights scores of far region SNPs,must be consistent with the number of the --regions",nargs="+",default=[1])
+    parser.add_argument("--snp_scores",help="The weights of the following various type SNPs: [NoSys, Sys, intronic , splicing]",nargs="+",default=[10,5,3,3])
     parser.add_argument("--base_scores",help="The weights of the Basic GWAS result (range from 0~1)",type=float,default=0.8)
-    parser.add_argument("--snp_scores",help="The weights of the following various type SNPs: [NoSys, Sys, Splic, Near, Far]",nargs="+",default=[10,5,3,2,1])
+    
 
     parsed_args = parser.parse_args(args)
-    print (parsed_args)
 
     Common.check_path_exists(parsed_args.input)
     Common.check_path_exists(parsed_args.phe)
     Common.check_path_exists(parsed_args.vcf)
+    Common.check_path_exists(parsed_args.bed)
     Common.check_path_exists(f"{parsed_args.annovar}.variant_function")
     Common.check_path_exists(f"{parsed_args.annovar}.exonic_variant_function")
+
+    if not len(parsed_args.regions) == len(parsed_args.regions_score):
+        print("# Error: --regions_score must hava the same length with --regions")
+        exit(1)
+
+
     if parsed_args.function:
         Common.check_path_exists(parsed_args.function)    
 
@@ -50,89 +61,182 @@ def get_args(args):
 
 def main(args=None):
     args=get_args(args)
+    print (args)
+    out= args.out
 
     #logger = configure_logging()
     #logger.info('Starting main Program')
     #logger.info(args)
-
-    out= args.out
-
+ 
     #logger.info(f"Reading GWAS result from {args.input}")
-
+    print(f"Reading GWAS result from {args.input}")
     df=pd.read_table(args.input, sep="\t")
+    if len(df) < args.min_sites:
+        print(f"# Warning : Significance locus in file {args.input} was less than {args.min_sites}, so this program is suspended here")
+        exit(0)
 
     name_col= {args.chrom:"CHROM",args.pos:"POS",args.value:"P",args.name:"ID"}
     df = df.rename(columns=name_col)
-    #cut=Common.judge_sign(float(1)/len(df))
-    #print(df)
 
-    #logger.info("Gwas cutline is %s"%(cut))
-    (sites,sitesl,GwasP) = significanceDF(df,out)
-    #print(sitesl)
-    #exit(0)
+    gene_header,base_score_dict = check_header(args.regions,args.regions_score,args.eQTL,args.eQTL_score,args.snp_scores)
+
+    (snp_bases,snp_pos2id) = significance(df)
+    
     #logger.info(f"Reading Candidata SNP Genotype info from {args.vcf}")
-    (cgt,cinfo)=readSNPs(args.vcf,sitesl,out)
+    print(f"Reading Candidata SNP Genotype info from {args.vcf}")
+    (snp_GTs,snp_bases) = read_GTs(args.vcf,snp_bases,out)
 
-    #logger.info(f"Reading significance SNP function from annovar result {args.annovar}.variant_function and {args.annovar}.exonic_variant_function") 
-    (SNPcount,SNPloci,snp2gene) = readAnnovar(f"{args.annovar}.variant_function",f"{args.annovar}.exonic_variant_function",sites) 
+    print(f"Reading Annovar result")
+    snp_genes = read_annovar(f"{args.annovar}.variant_function",f"{args.annovar}.exonic_variant_function",snp_pos2id)
+
+    print(f"Reading Annovar result")
+    snp_genes = annot_genes(args.bed,args.regions,snp_pos2id,snp_genes)
+
+    if args.eQTL:
+        snp_genes=annot_genes_eqtl(args.eQTL,snp_bases,snp_genes)
+
+
+    #   print(snp_genes)
 
     #logger.info("Reading Phenotype data from %s" %(args.phe)) 
     Phe = readTableDict(args.phe,0,2)
 
-    (snp,candidate_genes)=outBasicModel(out,sites,GwasP,cgt,cinfo,SNPcount,SNPloci,snp2gene,Phe,args.function) 
+    (gene_snp_count,gene_snp_count_cor)=out_sites_genes(out,snp_bases,snp_genes,snp_GTs,Phe)
 
+    df_base = out_basic_genes(out,gene_snp_count,gene_snp_count_cor,gene_header,base_score_dict,args.function)
+
+    if args.weight:
+        out_weight_genes(out, df_base, args.weight, args.base_scores, Phe, args.bed, args.function)
+
+
+def out_weight_genes(out, df, weight, base_scores, Phe, bed, function):
     
-    if args.weight:  # with eight model
-        main_df = pd.read_table(f"{out}.sign.BasicGene.xls",index_col="ID")
-        df_handle = main_df.iloc[:, :8].copy()
-        df_function = main_df.iloc[:, 8:]
-        #print(df_handle)
-        #print(df_function)
+    evidens=Common.read_file(weight,mode="list",vals=[0,1,2,3])
 
-        evidens=Common.read_file(args.weight,mode="list",vals=[0,1,2,3])
-        evidens = sorted(evidens, key=lambda x: 0 if x[1] == 'eqtl' else 1)
+    print(evidens)
+    #print(df)
+    second_score_dict={}
+    for name,model,value,file in evidens:
+        print(f"Evidence gene from {model} file {file}")
+        if model == "express":
+            df=evidence_express(file,df,name,Phe)     # Phe vs FPKM
+            #second_score_dict.append([name,value])      
+        elif model == "gene":   # Known Candidate Gene
+            df=evidence_genes(file,df,name)
+            #second_score_dict.append([name,value])          
+        elif model == "loci":   # Known Candidate locis 
+            df=evidence_loci(file,df,name,bed)
+            #second_score_dict[name]=value
+        else:
+            print(f"# Unknow evidence data type {model},Ignore and skip file {file}") 
+        second_score_dict[f"{name}_v"]=value
 
-        second_score_dict={}
-        print(evidens)
-        for name,model,value,file in evidens:
-            if model == "express":
-                (df_handlese)=evidence_express(file,df_handle,name,Phe)     # Phe vs FPKM
-                #second_score_dict.append([name,value])    
-            elif model == "gene":   # Known Candidate Gene
-                df_handle=evidence_genes(file,df_handle,name)
-                #second_score_dict.append([name,value])          
-            elif model == "eqtl":   # Known SNP-Gene associate
-                df_handle=evidence_eqtl(file,df_handle,name,basic_site_file=f"{out}.sign.BasicSite.xls")
-                #second_score_list.append([f"{name}_global",value])               
-                #second_score_dict[name]=name,value
-            elif model == "loci":   # Known Candidate Gene
-                df_handle=evidence_loci(file,df_handle,name,args.bed)
-                #second_score_dict[name]=value
-            else:
-                print(f"# Unknow evidence data type {model},Ignore and skip file {file}")
-            second_score_dict[name]=value
+    #print(df)
+    #exit(0)
+    #df = clean_weight_df(df,second_score_dict)
+    
+    df = cal_df_score(df,second_score_dict,"Evi_score")
+    add_dict=dict(zip(["Base_score","Evi_score"],[base_scores,1-base_scores]))
+       
+    df = cal_df_score(df,add_dict,"Total_score")
 
-        #df_handle.to_csv(f"{out}.sign.Weight.genes.txt",sep="\t")
-        print(df_handle)
-        print(second_score_dict)
+    df = re_order_df(df, ['Total_SNP', 'Total_score', 'Base_score', 'Evi_score'])
+    df.sort_values(by='Total_score', ascending=False, inplace=True)
+
+    for key in second_score_dict.keys():
+        df = df.drop(key, axis=1)
+
+    if function:
+        df=add_function(df,function)
+    print(df)
+    df.to_csv(f"{out}.sign.WeightGenes.xls",sep="\t")    
 
 
-        base_score_dict = dict(zip(["NoSys","Sys","Splic","Near","Far"],args.snp_scores))
-        df_handle = cal_df_score(df_handle,base_score_dict,"Base_score")
+def out_sites_genes(out,snp_bases,snp_genes,snp_GTs,Phe):
+    gene_snp_count={}
+    gene_snp_count_cor={}
+    #logger.info("Outputing significance SNP function, GWAS-Pvalue")
+    with open("%s.sign.BasicSite.xls" % (out),"w") as of1:
+        of1.write("#ID\tChr\tPos\tRef\tAlt\tGene\tType\tRemarks\tP-GWAS\tP-CorPhe\n")
+        for rs in sorted(snp_genes,key=lambda x: snp_bases[x[0]][2]):
+            #    #logger.warning("Check SNP %s %s" %(rs[0],rs[1]))
+            sID  = rs[0]
+            base = snp_bases[sID]
+            (pp1,p1,r)=stTest(snp_GTs[sID],Phe)     # student t-test SNP vs Phe
+            of1.write(f"{rs[0]}\t{base[0]}\t{base[1]}\t{base[3]}\t{base[4]}\t{rs[1]}\t{rs[2]}\t---\t{base[2]}\t{p1}\n")
+            
+            gene_snp_count=Common.accumulateDict(gene_snp_count,1,rs[1],rs[2])
+            gene_snp_count=Common.accumulateDict(gene_snp_count,1,rs[1],"Total_SNP")
+            if p1 < 0.01:
+                gene_snp_count_cor=Common.accumulateDict(gene_snp_count,1,rs[1],rs[2])
+                gene_snp_count_cor=Common.accumulateDict(gene_snp_count,1,rs[1],"Total_SNP")
 
-        df_handle = cal_df_score(df_handle,second_score_dict,"Evi_score")
+    return gene_snp_count,gene_snp_count_cor
+    
 
-        add_dict=dict(zip(["Base_score_normalized","Evi_score_normalized"],[args.base_scores,1-args.base_scores]))
-        print(add_dict)
-        df_handle = cal_df_score(df_handle,add_dict,"Total_score")
+def out_basic_genes(out,gene_snp_count,gene_snp_count_cor,gene_header,base_score_dict,function):
 
-        df_handle.sort_values(by='Total_score_normalized', ascending=False, inplace=True)
-        print(df_handle)
+    gene_snp_count = Common.fill_double_dict_value(gene_snp_count,gene_header,0)
+    gene_snp_count_cor = Common.fill_double_dict_value(gene_snp_count_cor,gene_header,0)
+    out_dict={}
+    for gene in gene_snp_count.keys():
+        #outs = [ f"{gene_snp_count[gene][x]}:{gene_snp_count_cor[gene][x]}" for x in gene_header ]
+        outs = [ gene_snp_count[gene][x] for x in gene_header ]
+        out_dict[gene] = dict(zip(gene_header,outs))
+  
+    df_out = pd.DataFrame(out_dict).T
+    df_out.index.name="Gene"
 
-        if args.function:
-            df_handle=add_function(df_handle,args.function)
-        print(df_handle)
-        df_handle.to_csv(f"{out}.sign.Weight.genes.xls",sep="\t")
+    df_cal = cal_df_score(pd.DataFrame(gene_snp_count_cor).T,base_score_dict,"Base_score")
+    #print(df_cal)   
+    df_cal.index.name="Gene"
+
+    df_out["Base_score"]=df_cal["Base_score"]
+    #df_out["Base_score_normalized"]=df_cal["Base_score_normalized"]
+    df_out.sort_values(by='Base_score', ascending=False, inplace=True)
+    df_nofunction = df_out.copy()
+
+    df_out = re_order_df(df_out, ['Total_SNP', 'Base_score'])
+
+    if function:
+        df_out=add_function(df_out,function) 
+
+    df_out.to_csv(f"{out}.sign.BasicGene.xls",sep="\t")
+
+    return df_nofunction   
+
+
+def re_order_df(df, cols_to_front):
+    new_cols = cols_to_front + [col for col in df.columns if col not in cols_to_front]
+    df = df[new_cols]
+    return df  
+
+
+def annot_genes_eqtl(eQTL_file,snp_bases,snp_genes):
+
+    print(f"# eQTL evidence founded, use eQTL file: {eQTL_file} to identifed candidate genes")
+    Common.check_path_exists(eQTL_file)
+    eqlt_snps  = Common.read_file_accumulateDict(eQTL_file,vals=[1],key1=0)
+
+    for ss in eqlt_snps.keys():
+        if ss in snp_bases:
+            for g in eqlt_snps[ss]:
+                snp_genes.append([ss,g,"eQTL"])
+
+    return snp_genes
+
+def check_header(regions,regions_score,eQTL,eQTL_score,snp_scores):
+    gene_header=["NoSyn","Syn","intronic","splicing"]
+    for i in range(len(regions)):
+        gene_header.append(f"{regions[i]}Kb")
+        snp_scores.append(int(regions_score[i]))
+    if eQTL:
+        gene_header.append("eQTL")
+        snp_scores.append(int(eQTL_score))
+
+    base_score_dict = dict(zip(gene_header,snp_scores))
+    gene_header.insert(0,"Total_SNP")
+    return gene_header,base_score_dict
 
 
 def add_function(df,function_file):
@@ -148,9 +252,10 @@ def add_function(df,function_file):
 
 def cal_df_score(df,weights,name):
     weight_dict = {col: float(val) for col, val in weights.items()}
-    df[f'{name}'] = sum(df[col] * weight for col, weight in weight_dict.items())
-    df[f'{name}_normalized'] = df[name] / df[name].sum() *100
-    df[f'{name}_normalized'].round(4)
+    df[f'{name}_tmp'] = sum(df[col] * weight for col, weight in weight_dict.items())
+    df[f'{name}'] = df[f'{name}_tmp'] / df[f'{name}_tmp'].sum() *100
+    df[f'{name}'] = df[f'{name}'].round(4)
+    df = df.drop(f'{name}_tmp', axis=1)
     return df
 
 
@@ -162,88 +267,50 @@ def evidence_loci(file,df_handle,name,bedfile):
     gene_location = Common.read_file(bedfile,mode="dict",keys=[4],vals=[0,1,2,3])
     #print(gene_loci)
     #locis = Common.read_file(file,mode="dict",vals=[0,1,2,3],keys=[0])   # chrom start end id
-    locis = Common.read_file_accumulateDict(file,vals=[0,1,2,3],key1=0)
+    locis = Common.read_file_accumulateDict(file,vals=[],key1=0)
 
-    gene_loci={}
+    gene_value={}
+    gene_info={}
     candidate_genes=df_handle.index.tolist()
     for gene in candidate_genes:
         #print(gene)
         chrid=gene_location[gene][0]
         overlapping_regions=Common.search_cloesd_region(gene_location[gene],locis[chrid])
         if len(overlapping_regions) >= 1:
-            gene_loci[gene] = 1
+            gene_value[gene] = len(overlapping_regions)
+            gene_info[gene] = ",".join([x[3] for x in overlapping_regions])
         else:
-            gene_loci[gene] = 0
-
+            gene_value[gene] = 0
+            gene_info[gene] = "None"
         #print(gene,overlapping_regions)
-    df_handle=updata_df(df_handle,name,gene_loci)
-    return df_handle
-
-
-def evidence_eqtl(file,df_handle,name,basic_site_file="out.sign.BasicSite.xls"):
-    basic_snps = Common.read_file_accumulateDict(basic_site_file,vals=[0],key1=3)
-    eqlt_snps  = Common.read_file_accumulateDict(file,vals=[0],key1=1)
-
-    total_snps = [x[0] for x in Common.read_file(basic_site_file,mode="list",vals=[0])]
-    snps_eqlt  = Common.read_file_accumulateDict(file,vals=[1],key1=0)
-
-    for snp in total_snps:
-        if not snp in snps_eqlt:
-            continue
-        for gene in snps_eqlt[snp]:
-            if gene not in df_handle.index:
-                basic_snps[gene]=[]
-                print(f"# Add new candidate_genes {gene} according eqtl file {file} ")
-                df_handle.loc[gene] = {
-                    'TotalSNP': 0,
-                    'NoSys': 0,
-                    'Sys': 0,
-                    'Splic': 0,
-                    'Near': 0,
-                    'Far': 0,
-                    'PheGT-test-number': 0,
-                    'PheGT-test-ratio': 0,
-    }
-
-    gene_snps_local={}
-    gene_snps_global={}
-    candidate_genes=df_handle.index.tolist()
-    #print(candidate_genes)
-    for gene in candidate_genes:
-        common_snps = []
-        comon_all_snps = []
-        if gene in eqlt_snps:
-            common_snps = set(basic_snps[gene]) & set(eqlt_snps[gene]) #  local-eqtl
-            comon_all_snps = set(total_snps) & set(eqlt_snps[gene])
-        gene_snps_local[gene] = len(common_snps)
-        gene_snps_global[gene] = len(comon_all_snps)
-
-    df_handle=updata_df(df_handle,name,gene_snps_global)
-    #df_handle=updata_df(df_handle,f"{name}_local",gene_snps_local)
-    #df_handle=updata_df(df_handle,f"{name}_global",gene_snps_global)
-
+    df_handle=updata_df(df_handle,f"{name}_v",gene_value)
+    df_handle=updata_df(df_handle,name,gene_info)
     return df_handle
 
 
 def evidence_genes(file,df_handle,name):
-    gene_exist={}
-    genes_tmp = Common.read_file(file,mode="list",sep="\t")
-    genes = [x[0] for x in genes_tmp]
-    
-    candidate_genes=df_handle.index.tolist()
-    for gene in candidate_genes:
-        if gene in genes:
-            gene_exist[gene]=1
-        else:
-            gene_exist[gene]=0
+    info={}
+    value={}
 
-    df_handle=updata_df(df_handle,name,gene_exist)
+    genes_evi = Common.read_file(file,mode="dict",keys=[0],vals=[0,1,2],sep="\t")
+
+    for gene in df_handle.index.tolist():
+        if gene in genes_evi:
+            value[gene] = float(genes_evi[gene][1])
+            info[gene]  = genes_evi[gene][2]
+        else:
+            value[gene] = 0
+            info[gene]  = "None"
+
+    df_handle=updata_df(df_handle,f"{name}_v",value)
+    df_handle=updata_df(df_handle,name,info)
     return df_handle
 
 
 def evidence_express(file,df_handle,name,Phe):
     #logger.info("Reading the gene expression matrix from %s" %(args.express))
     gene_asso={}
+    gene_value={}
     G,Gsample,Genes  = readData(file,"v")
     candidate_genes = df_handle.index.tolist()
     for gene in candidate_genes:
@@ -253,13 +320,16 @@ def evidence_express(file,df_handle,name,Phe):
         else:
             lineregress=expressPheAsso(G[gene],Phe)
             #print(gene,lineregress.pvalues,lineregress.pvalues[1])
-            p = 0
-            if not np.isnan(lineregress.pvalues[1]) and lineregress.pvalues[1] <0.01:
-                p = 1
+            gene_value[gene] = 0
+            gene_asso[gene]  ="None"
+            if not np.isnan(lineregress.pvalues[1]) and lineregress.pvalues[1] < 0.01:
+                gene_value[gene] = 1
+                gene_asso[gene]  = lineregress.pvalues[1]
             #print(gene,lineregress.pvalues,lineregress.pvalues[1],p)
-            gene_asso[gene] = p
+            #gene_asso[gene] = p
 
     df_handle=updata_df(df_handle,name,gene_asso)
+    df_handle=updata_df(df_handle,f"{name}_v",gene_value)
 
     return df_handle
 
@@ -271,68 +341,6 @@ def updata_df(df,index_name,data_dict,missing="None"):
     return df
 
 
-
-def outBasicModel(out,sites,GwasP,cgt,cinfo,SNPcount,SNPloci,snp2gene,Phe,function_file):
-    snp=[]
-    gene=[]
-    sign_snp_number={}
-    #logger.info("Outputing significance SNP function, GWAS-Pvalue")
-
-    # needed snp2gene sites cinfo GwasP cgt
-    with open("%s.sign.BasicSite.xls" % (out),"w") as of1:
-        of1.write("#ID\tRef\tAlt\tType\tGene\tP-GWAS\tP-CorPhe\n")
-        for snp in snp2gene.keys():
-            rs = snp.split("#")
-            if rs[0] not in sites or int(rs[1]) not in sites[rs[0]]:
-                #logger.warning("Check SNP %s %s" %(rs[0],rs[1]))
-                continue
-            sID = sites[rs[0]][int(rs[1])]
-            (pp1,p1,r)=stTest(cgt[sID],Phe)     # student t-test SNP vs Phe
-            for recode in snp2gene[snp]:
-                if p1 < 0.01 :
-                    sign_snp_number=accumulateDict(sign_snp_number,1,recode[0])
-                of1.write("%s\t%s\t%s\t%s\t%s\t%s\t%s\n" %(sID,cinfo[sID][0],cinfo[sID][1][0],recode[0],recode[1],GwasP[sID],p1))
-
-    #logger.info("Outputing Genes-SNP statistical table")
-
-    if function_file:
-        functions,function_header = Common.read_file(function_file,mode="dict",vals=[],keys=[0],sep="\t",header=True)
-        print(function_header) 
-    
-    out_list=[]
-
-    out_header=["ID","TotalSNP","NoSys","Sys","Splic","Near","Far","PheGT-test-number","PheGT-test-ratio"]
-    if function_file:
-        out_header += function_header[1:]
-
-    for g in SNPloci.keys():
-        if g == "NONE":
-            continue
-
-        count=SNPcount[g]
-        total=count['Exonic']+count['Near']+count['Far']+count['Splic']
-
-        if g not in sign_snp_number:
-            sign_snp_number[g]=0
-        sign_snp_rate = round(sign_snp_number[g]/total,2)
-
-        line = [g,total,count['NoSyn'],count['Exonic']-count['NoSyn'],count['Splic'],count['Near'],count['Far'],sign_snp_number[g],sign_snp_rate]
-
-        if function_file:
-            if g not in functions:
-                functions[g]=["---" for x in function_header]
-            line += functions[g][1:]
-
-        out_list.append(line)
-
-    out_list=sorted(out_list,key=lambda x: x[1],reverse=True)
-    Common.write_list_to_file(out_list,f"{out}.sign.BasicGene.xls",header=out_header,vals=[],sep="\t")
-    #with open("%s.sign.BasicGene.xls" % (out),"w") as of2:
-
-    return snp,[x[0] for x in out_list]
-'''    
-
-'''
 
 def expressPheAsso(expressDict,pheDict,gname=None,tname=None):
     x=[]
@@ -385,12 +393,12 @@ def stTest(gt,Vals):
     else:
         return 0,p,gts
 
- 
-def significanceDF(df,out):
-    sites={}
-    GwasP={}
-    sitesl=[]
+# Reading Function
 
+def significance(df):
+
+    snp_bases={}
+    snp_pos2id={}
     #signDf=df[df['P'] < cut ]
     signDf=df
     # out signDf  
@@ -402,89 +410,100 @@ def significanceDF(df,out):
         p=int(row['POS'])
         i=str(row['ID'])
         v=float(row['P'])
-        sites=accumulateDict(sites,i,c,p) 
-        sitesl.append([i,c,p])
-        GwasP[i] = v
+        snp_bases[i]=[c,p,v]
+        tags=f"{c}#{p}"
+        snp_pos2id[tags] = i
 
-    return (sites,sitesl,GwasP)
+    return (snp_bases,snp_pos2id)
 
-# Reading Function
 
-def readSNPs(gzvcf,sitesl,out=None):
-    snpsGT={}
+
+def read_GTs(gzvcf,snp_bases,out=None):
+    snp_GTs={}
     snpsINFO={}
     vcf_reader = VCF(gzvcf)
     samples=vcf_reader.samples
     with open("%s.sign.BasicGT.lst" %(out),"w") as of:
-        of.write("Chr\tPos\tRef\tAlt\t%s\n" %("\t".join(samples)))
-        for l in sitesl:
-            for v in vcf_reader('%s:%s-%s' %(l[1],l[2],l[2])):
-                snpsGT[l[0]] =dict(zip(samples,v.gt_types))
-                snpsINFO[l[0]]=[v.REF,v.ALT[0],v.gt_phases]
-                of.write("%s\t%s\t%s\t%s\t%s\n" %(l[1],l[2],v.REF,v.ALT[0],"\t".join(listType(v.gt_types.tolist(),"str"))))  #gt_types(0 ref hom,1 het, 2 unknow ,3 alt hom) 
-                #of.write("%s\t%s\t%s\t%s\t%s\n" %(l[1],l[2],v.REF,v.ALT,"\t".join(v.genotypes)))
-    return snpsGT,snpsINFO
+        of.write("ID\tChr\tPos\tRef\tAlt\t%s\n" %("\t".join(samples)))
+        for k in snp_bases.keys():
+            l=snp_bases[k]
+            for v in vcf_reader('%s:%s-%s' %(l[0],l[1],l[1])):
+                snp_GTs[k] =dict(zip(samples,v.gt_types))
+                snp_bases[k].append(v.REF)
+                snp_bases[k].append(v.ALT[0])
+                of.write("%s\t%s\t%s\t%s\t%s\t%s\n" %(k,l[0],l[1],v.REF,v.ALT[0],"\t".join(listType(v.gt_types.tolist(),"str"))))  #gt_types(0 ref hom,1 het, 2 unknow ,3 alt hom) 
 
-def readAnnovar(vf,evf,sites):
-    ginfo={}
-    gcount={}
-    snp2gene={}
-    exon={}
+    return snp_GTs,snp_bases
+
+
+def read_annovar(vf,evf,snp_pos2id):
+    #print(snp_pos2id)
+    snp_genes=[]
+    snp_exon=[]
     for l in open(vf,"r"):
         ls =l.strip().split()
-        tags="%s#%s" %(ls[2],ls[3])
-        # gene,loci
-        if str(ls[2]) not in sites:
+
+        if ls[0] =="intergenic" or "stream" in ls[0] or "UTR" in ls[0]:
             continue
-        if int(ls[3]) in sites[str(ls[2])]:
-            snp2gene[tags]=[]
-            pg=re.split(r'\(|,',ls[1])
-            if "exonic" in ls[0]:
-                gcount=accumulateDict(gcount,1,pg[0],"Exonic")
-                ginfo=accumulateDict(ginfo,tags,pg[0])
-                snp2gene[tags].append([pg[0],"Exonic"])
-                exon["%s#%s"%(ls[2],ls[3])] = pg[0]
-            elif "splicing" in ls[0]:
-                gcount=accumulateDict(gcount,1,pg[0],"Splic")
-                ginfo=accumulateDict(ginfo,tags,pg[0])
-                snp2gene[tags].append([pg[0],"Splic"])
-            elif "intergenic" in ls[0]:
-                if  not pg[0] == "NONE":
-                    gcount=accumulateDict(gcount,1,pg[0],"Far")
-                    ginfo=accumulateDict(ginfo,tags,pg[0])
-                    snp2gene[tags].append([pg[0],"Far"])
-                if  not pg[2] == "NONE":
-                    gcount=accumulateDict(gcount,1,pg[2],"Far")
-                    ginfo=accumulateDict(ginfo,tags,pg[2])  
-                    snp2gene[tags].append([pg[2],"Far"])
-            else:  # intron\UTR\upstream\downstream
-                if ";" in ls[1]:
-                    gg=ls[1].split(";")
-                    gcount=accumulateDict(gcount,1,gg[0],"Near")
-                    ginfo=accumulateDict(ginfo,tags,gg[0])
-                    snp2gene[tags].append([gg[0],"Near"]) 
-                    gcount=accumulateDict(gcount,1,gg[1],"Near")
-                    ginfo=accumulateDict(ginfo,tags,gg[1]) 
-                    snp2gene[tags].append([gg[1],"Near"])
-                else:   
-                    gcount=accumulateDict(gcount,1,pg[0],"Near")  
-                    ginfo=accumulateDict(ginfo,tags,pg[0]) 
-                    snp2gene[tags].append([pg[0],"Near"])        
+
+        tags = "%s#%s" %(ls[2],ls[3])
+        # gene,loci    
+        if tags not in snp_pos2id:
+            continue
+
+        #print(tags,l)
+        pgs=re.split(r'\(|,',ls[1]) 
+
+        if ls[0] == "exonic":
+            for gene in pgs:
+                snp_exon.append(tags)
+        else:                       
+            for gene in pgs:
+                snp_genes.append([snp_pos2id[tags],gene,ls[0]])
+
 
     for le in open(evf,"r"):
         les=le.strip().split("\t")
         tags="%s#%s"%(les[3],les[4])
         #print (tag)
-        if tags in exon: 
+        if tags in snp_exon:
+            #print(tags,les)
+            gene=les[2].split(":")[0]
             #print (le)
             if "nonsynonymous"  in les[1]:
-                gcount=accumulateDict(gcount,1,exon[tags],"NoSyn")
-                snp2gene[tags]=[[exon[tags],"NoSyn"]]
+                snp_genes.append([snp_pos2id[tags],gene,"NoSyn"])
+            else:
+                snp_genes.append([snp_pos2id[tags],gene,"Syn"])
 
-    for g in gcount.keys():
-        gcount[g] = fillDictValue(gcount[g],['Near','Far','Splic','Exonic','NoSyn'],0)
+    return snp_genes
 
-    return gcount,ginfo,snp2gene
+
+def annot_genes(bedfile,regions,snp_pos2id,snp_genes):
+
+    if not bedfile:
+        print("# Error: Please specify the bed file containing mRNA or genes using the --bed !")
+        exit(1)
+
+    gene_location = Common.read_file(bedfile,mode="dict",keys=[4],vals=[0,1,2,3])
+    #print(gene_location)
+
+    for gene in gene_location:
+        s=int(gene_location[gene][1])
+        e=int(gene_location[gene][2])
+        for pos_inf in snp_pos2id:
+            cid,pos = pos_inf.split("#")
+            if gene_location[gene][0] == cid:
+                for region_size in regions:
+                    if int(pos) - e < int(region_size)*1000 and  int(pos) > e:
+                        snp_genes.append([snp_pos2id[pos_inf],gene,f"{region_size}Kb"])
+                    elif s - int(pos) < int(region_size)*1000 and int(pos) <s:
+                        snp_genes.append([snp_pos2id[pos_inf],gene,f"{region_size}Kb"])
+                    else:
+                        continue
+
+    return snp_genes
+
+
 
 def readData(infile,order):
     P={}
@@ -537,11 +556,6 @@ def accumulateList(myList,val):
         myList.append(val)
     return myList
 
-def fillDictValue(myDict,keylist,val):
-    for k in keylist:
-        if k not in myDict:
-            myDict[k] = val
-    return myDict
 
 
 def accumulateDict(myDict,val,keyA,keyB="no"):

@@ -32,7 +32,9 @@ class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter,
 
 # File - List & Dict read/write  Function 
 
-def read_file(infile,mode="list",vals=[],keys=[],header=False,sep="\t"):
+def read_file(infile,mode="list",vals=[],keys=[],header=False,sep="\t",noSplit=False):
+
+
     result = [] if mode == "list" else {}
     head_info=[]
     with open(infile,"r") as inf:
@@ -40,23 +42,21 @@ def read_file(infile,mode="list",vals=[],keys=[],header=False,sep="\t"):
             if line.startswith("#"):    # start with #
                 continue
 
-            datas = line.strip()
-            if not sep == None:   
-                ss=line.strip().split(sep)
-                datas = ss if len(vals) == 0 else [ ss[i] for i in vals ]
+            vv = return_vals(vals,line,sep,noSplit)
 
             if header and i==0:
-                head_info=datas
+                head_info=vv
                 continue
 
-            ss = line.strip().split(sep)
-            #datas = ss if len(vals) == 0 else [ ss[i] for i in vals ]
+            kv = return_vals(keys,line,sep,False)
 
             if mode == "list":
-                result.append(datas)
+                result.append(vv)
             elif mode == "dict":
-                key = "###".join([ss[i] for i in keys])
-                result[key] = datas
+                key = kv
+                if type(key) == list:
+                    key = "###".join(kv)
+                result[key] = vv
 
     if header==False:
         return result
@@ -64,21 +64,17 @@ def read_file(infile,mode="list",vals=[],keys=[],header=False,sep="\t"):
         return (result,head_info)
 
 
-def read_file_accumulateDict(infile,vals=[0],key1=1,key2="no",sep="\t"):
+def read_file_accumulateDict(infile,vals=[0],key1=[1],key2="no",sep="\t"):
 
     result={}
     with open(infile,"r") as inf:
         for line in inf:
             if line.startswith("#"):    # start with #
                 continue
+            datas = line.strip().split(sep)
+            vv = return_vals(vals,line,sep,False)
 
-            datas = line.strip().split(sep) 
-            vv=""
-            if len(vals)==1:  # only one 
-                vv=datas[vals[0]]
-            else:
-                vv=[datas[i] for i in vals] 
-  
+
             if not key2 =="no":
                 key2 = datas[key2]
 
@@ -88,12 +84,19 @@ def read_file_accumulateDict(infile,vals=[0],key1=1,key2="no",sep="\t"):
 
 
 
-
-
-
-
-
-
+def return_vals(vals,line,sep="\t",noSplit=False):
+    if noSplit: # not split ,return whole line 
+        return line.strip()
+    else:
+        datas = line.strip().split(sep)
+        vv=""
+        if len(vals)==1:            # only one, return whole line in str
+            vv = datas[vals[0]]
+        elif len(vals)==0:          # return all    cols in lsit 
+            vv=datas
+        else:                       # return parted cols in lsit 
+            vv=[datas[i] for i in vals]
+    return vv
 
 
 
@@ -191,7 +194,13 @@ def accumulateDict(myDict,val,keyA,keyB="no"):
     return myDict
 
 
-def fillDictValue(mydict,keylist,val):
+def fill_double_dict_value(mydict,keylist,val):
+    for g in mydict.keys():
+        mydict[g]=fill_dict_value(mydict[g],keylist,val)
+    return mydict
+
+
+def fill_dict_value(mydict,keylist,val):
     for k in keylist:
         if k not in mydict:
             mydict[k] = val
@@ -260,7 +269,7 @@ def search_cloesd_region(gene,locis):
     overlapping_regions = []
     
     for locus in locis:
-        chrom_l, start_l, end_l, id_l = locus[0:4]
+        chrom_l, start_l, end_l , id_l= locus[0:4]
         
         if chrom_l != chrom_g:
             continue
