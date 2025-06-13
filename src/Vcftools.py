@@ -23,14 +23,7 @@ def get_args(args):
     parser.add_argument("--rename_chr",help="Rename the Chromosomes according to the relationship specified in --chr. Chromosomes not in the file will be discarded",action="store_true",default=None)
     parser.add_argument("--rename_sample",help="Rename the Sampels according to the relationship specified in --keep. Samples not in the file will be discarded",action="store_true",default=None)
 
-    #parser.add_argument("-s","--simplify",help="simplify and filter vcf, Retain only the necessary information (GT AD DP) and no phasing",default=None)
-    #parser.add_argument("-r","--rename",help="Rename samples in vcf in files",type=str,default=None)
-    #parser.add_argument("-l", "--list",help="Trans vcf to snplist format",default=None)
-    #parser.add_argument("-f","--fasta",help="Trans vcf file to fasta format",default=None)
-    #parser.add_argument("-p","--phylip",help="Trans vcf file to phylip format",type=float,default="0.05")
-    #parser.add_argument("-s","--sign",help="Significance cut line: B = 1/n || F = 0.05/n || a self-defined float",default="B")
-    #parser.add_argument("-e", "--emmax",help="Path of the emmax dir,which include emmax-kin-intel64 and emmax-intel64 ",default="/home/minghui/software/reseq/EMMAX/")
-    #parser.add_argument("-l", "--plink",help="Path of the plink v1.9",default="/home/minghui/software/reseq/plink1.9/plink")
+
      
     parsed_args = parser.parse_args(args)
     print (parsed_args)
@@ -69,7 +62,7 @@ def main(args=None):
                     if parts[0] not in keep_chrom:
                         continue
                     if args.rename_chr:
-                        parts[0] = change_chrom[parts[0]][0]
+                        parts[0] = change_chrom[parts[0]]
 
                 if args.add_ids:
                     parts[2] = f"{parts[0]}_{parts[1]}"
