@@ -3,6 +3,7 @@ import Common
 import Visualize
 import ParaRun
 import pandas as pd
+import numpy as np
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor,as_completed
 import argparse
@@ -17,7 +18,7 @@ def get_args(args):
     parser.add_argument("-c","--cov",help="Covariance, could be PCA, structure or other files",type=str) 
     parser.add_argument("-o","--out",help="Prefix of outfiles",type=str,default="out") 
     parser.add_argument("-m","--maf",help="Exclude variants with minor allele frequency lower than this",type=float,default="0.05")
-    parser.add_argument("-s","--sign",help="Significance cut line: B = 1/n || F = 0.05/n || a self-defined float",default="B")
+    parser.add_argument("-s","--sign",help="Significance cut line: B = 1/n || F = 0.05/n || a self-defined float",nargs="+",default=["B"])
     parser.add_argument("-e", "--emmax",help="Path of the emmax dir,which include emmax-kin-intel64 and emmax-intel64 ",default="/home/minghui/software/reseq/EMMAX/")
     parser.add_argument("-l", "--plink",help="Path of the plink v1.9",default="/home/minghui/software/reseq/plink1.9/plink")
      
@@ -59,7 +60,11 @@ def main(args=None):
 
 def process_manhantun(traits,significant):
     for trait in traits:
-        Visualize.ManhantanMain(f"Traits.{trait}.emmax.ps.tsv",out=f"Traits.{trait}.emmax.ps.manhantun",sign=significant)
+        df = pd.read_table(f"Traits.{trait}.emmax.ps.tsv", sep="\t")
+        df['Value'] = -np.log10(df['Value'])
+        cut = -np.log10(significant)
+        Visualize.manhatan_fig(df,cut,"-log(P)",f"Traits.{trait}")
+        #Visualize.ManhantanMain(f"Traits.{trait}.emmax.ps.tsv",out=f"Traits.{trait}.emmax.ps.manhantun",sign=significant)
     Common.run_command(f"touch GWAS.manhantun.done")
 
 def process_outputs(traits,snps,significant):
@@ -76,15 +81,16 @@ def process_outputs(traits,snps,significant):
 
 def process_trait_output(trait,snps,significant):
     with open(f"Traits.{trait}.emmax.ps", "r") as f,open(f"Traits.{trait}.emmax.ps.tsv", "w") as f1,open(f"Traits.{trait}.emmax.ps.significant.tsv", "w") as f2:
-        f1.write("CHROM\tPOS\tID\tP\n")
-        f2.write("CHROM\tPOS\tID\tP\n")
+        f1.write("Chrom\tPos\tID\tValue\n")
+        f2.write("Chrom\tPos\tID\tValue\n")
+
         #data=[]
         for l in f:
             ls = l.strip().split("\t")
             #chrom, pos = snps.loc[ls[0], ["chrom", "pos"]]
             chrom, pos = snps[ls[0]]
             f1.write(f"{chrom}\t{pos}\t{ls[0]}\t{ls[3]}\n")
-            if float(ls[3]) <= significant:
+            if float(ls[3]) <= significant[0]:
                 f2.write(f"{chrom}\t{pos}\t{ls[0]}\t{ls[3]}\n")
 
     #Manhantun.ManhantanMain(f"Traits.{trait}.emmax.ps.tsv",out=f"Traits.{trait}.emmax.ps.manhantun",sign=significant)
@@ -110,7 +116,10 @@ def process_gwas(args):
     for trait in traits:
         trait_phes,samples = Common.sort_dict_by_list(data[trait],samples)
         Common.write_list_to_file(zip(samples,samples,trait_phes),f"Traits.{trait}.phe",vals=[])
-        cmds.append(f"{args.emmax}/emmax-intel64 -v -d 10 -t GWAS -k GWAS.aBN.kinf -p Traits.{trait}.phe -o Traits.{trait}.emmax -c GWAS.covariance")
+        if args.cov:
+            cmds.append(f"{args.emmax}/emmax-intel64 -v -d 10 -t GWAS -k GWAS.aBN.kinf -p Traits.{trait}.phe -o Traits.{trait}.emmax -c GWAS.covariance")
+        else:
+            cmds.append(f"{args.emmax}/emmax-intel64 -v -d 10 -t GWAS -k GWAS.aBN.kinf -p Traits.{trait}.phe -o Traits.{trait}.emmax")
     
     Common.write_list_to_file(cmds,"./cmd.GWAS.sh")
     ParaRun.runlocal("./cmd.GWAS.sh",lines=1,threads=8)
@@ -143,8 +152,9 @@ def process_vcf_phe(args):
         Common.run_command(f"{args.emmax}/emmax-kin-intel64 -v -d 10 GWAS")   # Generate kinship matrix
         Common.run_command(f"touch GWAS.prepared.done")
 
-    samples=[x[0] for x in Common.read_file("GWAS.sample","list",vals=[0])]
+    samples=Common.read_file("GWAS.sample","list",vals=[0])
     return samples
+
 
 
 def process_covariance(cov_file,samples):

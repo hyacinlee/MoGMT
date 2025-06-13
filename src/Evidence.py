@@ -89,7 +89,7 @@ def main(args=None):
     print(f"Reading Annovar result")
     snp_genes = read_annovar(f"{args.annovar}.variant_function",f"{args.annovar}.exonic_variant_function",snp_pos2id)
 
-    print(f"Reading Annovar result")
+    print(f"Reading Gene feature bed to identify flank genes")
     snp_genes = annot_genes(args.bed,args.regions,snp_pos2id,snp_genes)
 
     if args.eQTL:
@@ -99,7 +99,8 @@ def main(args=None):
     #   print(snp_genes)
 
     #logger.info("Reading Phenotype data from %s" %(args.phe)) 
-    Phe = readTableDict(args.phe,0,2)
+    Phe = Common.read_file(args.phe,keys=[0],vals=[2])
+    #Phe = readTableDict(args.phe,0,2)
 
     (gene_snp_count,gene_snp_count_cor)=out_sites_genes(out,snp_bases,snp_genes,snp_GTs,Phe)
 
@@ -163,33 +164,45 @@ def out_sites_genes(out,snp_bases,snp_genes,snp_GTs,Phe):
             sID  = rs[0]
             base = snp_bases[sID]
             (pp1,p1,r)=stTest(snp_GTs[sID],Phe)     # student t-test SNP vs Phe
+
             of1.write(f"{rs[0]}\t{base[0]}\t{base[1]}\t{base[3]}\t{base[4]}\t{rs[1]}\t{rs[2]}\t---\t{base[2]}\t{p1}\n")
             
             gene_snp_count=Common.accumulateDict(gene_snp_count,1,rs[1],rs[2])
             gene_snp_count=Common.accumulateDict(gene_snp_count,1,rs[1],"Total_SNP")
+            gene_snp_count_cor=Common.accumulateDict(gene_snp_count,0,rs[1],rs[2])
+            gene_snp_count_cor=Common.accumulateDict(gene_snp_count,0,rs[1],"Total_SNP")
             if p1 < 0.01:
                 gene_snp_count_cor=Common.accumulateDict(gene_snp_count,1,rs[1],rs[2])
                 gene_snp_count_cor=Common.accumulateDict(gene_snp_count,1,rs[1],"Total_SNP")
 
+    #print(gene_snp_count["evm.model.scaffold_1.1741"])
     return gene_snp_count,gene_snp_count_cor
     
 
 def out_basic_genes(out,gene_snp_count,gene_snp_count_cor,gene_header,base_score_dict,function):
 
     gene_snp_count = Common.fill_double_dict_value(gene_snp_count,gene_header,0)
+    #print(gene_snp_count["evm.model.scaffold_1.1741"])
+    #print(gene_header)
     gene_snp_count_cor = Common.fill_double_dict_value(gene_snp_count_cor,gene_header,0)
+
     out_dict={}
     for gene in gene_snp_count.keys():
         #outs = [ f"{gene_snp_count[gene][x]}:{gene_snp_count_cor[gene][x]}" for x in gene_header ]
         outs = [ gene_snp_count[gene][x] for x in gene_header ]
         out_dict[gene] = dict(zip(gene_header,outs))
   
+    #print(out_dict["evm.model.scaffold_1.1741"])
+
     df_out = pd.DataFrame(out_dict).T
     df_out.index.name="Gene"
 
     df_cal = cal_df_score(pd.DataFrame(gene_snp_count_cor).T,base_score_dict,"Base_score")
-    #print(df_cal)   
+    #df_cal = cal_df_score(df_out,base_score_dict,"Base_score")
+  
     df_cal.index.name="Gene"
+
+    #print(df_cal)
 
     df_out["Base_score"]=df_cal["Base_score"]
     #df_out["Base_score_normalized"]=df_cal["Base_score_normalized"]
@@ -431,7 +444,9 @@ def read_GTs(gzvcf,snp_bases,out=None):
                 snp_GTs[k] =dict(zip(samples,v.gt_types))
                 snp_bases[k].append(v.REF)
                 snp_bases[k].append(v.ALT[0])
-                of.write("%s\t%s\t%s\t%s\t%s\t%s\n" %(k,l[0],l[1],v.REF,v.ALT[0],"\t".join(listType(v.gt_types.tolist(),"str"))))  #gt_types(0 ref hom,1 het, 2 unknow ,3 alt hom) 
+                types={0:f"{v.REF}{v.REF}",1:f"{v.REF}{v.ALT[0]}",2:f"NN",3:f"{v.ALT[0]}{v.ALT[0]}"}
+                gts = [ types[x] for x in v.gt_types.tolist()]
+                of.write("%s\t%s\t%s\t%s\t%s\t%s\n" %(k,l[0],l[1],v.REF,v.ALT[0],"\t".join(gts)))  #gt_types(0 ref hom,1 het, 2 unknow ,3 alt hom) 
 
     return snp_GTs,snp_bases
 

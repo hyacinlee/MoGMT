@@ -31,15 +31,22 @@ class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter,
 
 
 # File - List & Dict read/write  Function 
+def updata_df(df,index_name,data_dict,missing="None"):
+    df[index_name] = df.index.map(data_dict)
+    df[index_name].fillna(missing, inplace=True)
+    #new_order = [c for c in df.columns if c != 'B'] + ['B']
+    return df
 
-def read_file(infile,mode="list",vals=[],keys=[],header=False,sep="\t",noSplit=False):
+def read_file(infile,mode="list",vals=[],keys=[],header=False,sep="\t",noSplit=False,skipAnnot=True):
 
 
     result = [] if mode == "list" else {}
     head_info=[]
+    print(f"# Read file {infile} to {mode},vals={[vals]},keys={[keys]},skip={skipAnnot}")
+    
     with open(infile,"r") as inf:
         for i, line in enumerate(inf):
-            if line.startswith("#"):    # start with #
+            if skipAnnot and line.startswith("#"):    # start with #
                 continue
 
             vv = return_vals(vals,line,sep,noSplit)
@@ -264,18 +271,21 @@ def configure_logging():
 
 ## Data processing Function 
 def judge_significant(sign,df):
-    cut = sign 
 
-    if cut == "B":
-        cut=float(1)/len(df)
-        print(f"# The significance threshold is {cut} ")
-    elif cut == "F":
-        cut=float(0.05)/len(df)
-        print(f"# The significance threshold is {cut} ")
-    else:
-        cut = float(cut)
+    cuts = []
+    for cut in sign:
 
-    return cut
+        if cut == "B":
+            cuts.append(float(1)/len(df))
+            print(f"# The significance threshold is {cut} ")
+        elif cut == "F":
+            cuts.append(float(0.05)/len(df))
+            print(f"# The significance threshold is {cut} ")
+        else:
+            cuts.append(float(cut))
+
+    print(f"# The significance threshold is {cuts}")
+    return cuts
 
 
 def search_cloesd_region(gene,locis):
