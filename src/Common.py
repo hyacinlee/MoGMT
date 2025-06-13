@@ -73,12 +73,19 @@ def read_file_accumulateDict(infile,vals=[0],key1=[1],key2="no",sep="\t"):
                 continue
             datas = line.strip().split(sep)
             vv = return_vals(vals,line,sep,False)
+            #print(vv)
 
+            key1vv = return_vals(key1,line,sep,False)
+            #print(key1)
 
             if not key2 =="no":
-                key2 = datas[key2]
+                key2vv = return_vals(key2,line,sep,False)
+                #print(key2)
+            else:
+                key2vv="no"
+            #print(key1vv,key2vv,vv)
 
-            result=accumulateDict(result,vv,datas[key1],key2)
+            result=accumulateDict(result,vv,key1vv,key2vv)
             
         return result
 
@@ -89,6 +96,10 @@ def return_vals(vals,line,sep="\t",noSplit=False):
         return line.strip()
     else:
         datas = line.strip().split(sep)
+        for i in vals:
+            if i > len(datas):
+                print(f"#Error: index {i} not in infoline:{line}")
+
         vv=""
         if len(vals)==1:            # only one, return whole line in str
             vv = datas[vals[0]]
@@ -185,11 +196,20 @@ def accumulateDict(myDict,val,keyA,keyB="no"):
     else:
         if keyA in myDict:
             if keyB in myDict[keyA]:
-                myDict[keyA][keyB] += val
+                if type(val) == int :
+                    myDict[keyA][keyB] += val
+                else:
+                    myDict[keyA][keyB].append(val)
             else:
-                myDict[keyA].update({keyB: val})   
+                if type(val) == int :
+                    myDict[keyA].update({keyB: val})
+                else:
+                    myDict[keyA].update({keyB: [val]})
         else:
-            myDict.update({keyA:{keyB: val}})
+            if type(val) == int :
+                myDict.update({keyA:{keyB: val}})
+            else:
+                myDict.update({keyA:{keyB: [val]}})
 
     return myDict
 
