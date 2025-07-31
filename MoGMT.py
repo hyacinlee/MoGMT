@@ -20,7 +20,8 @@ SUB_COMMANDS = {
     "Visualize": "Visualize",
     "Vcftools" : "Vcftools",
     "BulkSegAna":"BulkSegAna",
-    "TransAsso": "TransAsso"
+    "TransAsso": "TransAsso",
+    "Colocalization":"Colocalization"
 }
 
 def main():
@@ -38,6 +39,8 @@ def main():
         Evidence     :   The module for evidence genes use multi-omics results.
 
         Visualize    :   The module for output Manhantun or other figures. 
+
+        Colocalization : The module for perform Co-localization with mutiple traits.
 
         BulkSegAna   :   The module for perform Bulked Segregant Analysis use vcf files.
 

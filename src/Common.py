@@ -172,10 +172,18 @@ def read_matrix_data(infile,order):
                 k2 = name
                 v = ls[i]
                 if order == "h":  ##  H-line  as key
-                    P=accumulateDict(P,v,k1,k2) 
+                    P=none_rep_twoDict(P,v,k1,k2) 
                 if order == "v":  ##  V-line  as key
-                    P=accumulateDict(P,v,k2,k1)
+                    P=none_rep_twoDict(P,v,k2,k1)
     return P,Hlist,Vlist
+
+def none_rep_twoDict(myDict,val,keyA,keyB):
+    if keyA not in myDict:
+        myDict[keyA]={}
+    myDict[keyA][keyB]=val
+
+    return myDict
+
 
 
 def accumulateList(mylist,val):
@@ -251,10 +259,14 @@ def run_command(cmd, check=True):
     subprocess.run(cmd, shell=True, check=check)
 
 
-def check_path_exists(path):
+def check_path_exists(path,mode="e"):
     if not os.path.exists(path):
-        print(f"Error：Paht of software or file not exist: {path}")
-        sys.exit(1) 
+        if mode == "e":
+            print(f"Error：Paht of software or file not exist: {path}")
+            sys.exit(1) 
+        elif mode == "w":
+            print(f"Warming：Paht of software or file not exist: {path}")
+            return False
     else:
         return True
 
@@ -270,6 +282,36 @@ def configure_logging():
 
 
 ## Data processing Function 
+
+def get_sorted_chromosomes(chrom_list):
+    """
+    对染色体名称进行排序，支持多种格式如 lg1, lg2 或 Chr1, Chr2 等
+    返回排序后的染色体列表
+    """
+    def extract_parts(chrom):
+        # 分离字母前缀和数字部分
+        chrom_str = str(chrom)
+        prefix = ''.join(filter(str.isalpha, chrom_str))
+        num_part = ''.join(filter(str.isdigit, chrom_str))
+        
+        # 处理纯数字或无数字的情况
+        try:
+            num = int(num_part) if num_part else 0
+        except:
+            num = 0
+        
+        return (prefix, num, chrom_str)  # 添加原始字符串作为第三元素保持稳定排序
+    
+    # 提取各部分信息
+    chrom_info = [extract_parts(c) for c in chrom_list]
+    
+    # 排序：先按前缀，再按数字
+    chrom_info.sort(key=lambda x: (x[0], x[1]))
+    
+    # 返回原始染色体名称
+    return [info[2] for info in chrom_info]
+
+
 def judge_significant(sign,df):
 
     cuts = []

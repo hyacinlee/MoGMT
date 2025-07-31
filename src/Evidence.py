@@ -27,9 +27,9 @@ def get_args(args):
     parser.add_argument("-e", "--eQTL",help='Known eQTLs results file in SNPs -- Gens formats',type=str)
     parser.add_argument("-o", "--out",help="Prefix of outfiles",type=str,default="Evi")
     parser.add_argument("-w", "--weight",help='Other evidence with weight',type=str)
-    parser.add_argument("--chrom",help="The column of Chromosom name in the inputfile",type=str,default="CHROM") 
-    parser.add_argument("--pos",help="The column of Maker pos in the inputfile",type=str,default="POS")
-    parser.add_argument("--value",help="The column of Value in the inputfile",type=str,default="P")
+    parser.add_argument("--chrom",help="The column of Chromosom name in the inputfile",type=str,default="Chrom") 
+    parser.add_argument("--pos",help="The column of Maker pos in the inputfile",type=str,default="Pos")
+    parser.add_argument("--value",help="The column of Value in the inputfile",type=str,default="Value")
     parser.add_argument("--name",help="The column of SNP id in the inputfile",type=str,default="ID")
     parser.add_argument("--min_sites",help="The minimum number of Candidata SNPs in the input file",type=int,default=5)
     parser.add_argument("--eQTL_score",help="The weights score of eQTL SNPs",type=int,default=3)
@@ -99,7 +99,7 @@ def main(args=None):
     #   print(snp_genes)
 
     #logger.info("Reading Phenotype data from %s" %(args.phe)) 
-    Phe = Common.read_file(args.phe,keys=[0],vals=[2])
+    Phe = Common.read_file(args.phe,mode="dict",keys=[0],vals=[2])
     #Phe = readTableDict(args.phe,0,2)
 
     (gene_snp_count,gene_snp_count_cor)=out_sites_genes(out,snp_bases,snp_genes,snp_GTs,Phe)
@@ -132,16 +132,13 @@ def out_weight_genes(out, df, weight, base_scores, Phe, bed, function):
             print(f"# Unknow evidence data type {model},Ignore and skip file {file}") 
         second_score_dict[f"{name}_v"]=value
 
-    #print(df)
-    #exit(0)
-    #df = clean_weight_df(df,second_score_dict)
     
     df = cal_df_score(df,second_score_dict,"Evi_score")
     add_dict=dict(zip(["Base_score","Evi_score"],[base_scores,1-base_scores]))
        
     df = cal_df_score(df,add_dict,"Total_score")
 
-    df = re_order_df(df, ['Total_SNP', 'Total_score', 'Base_score', 'Evi_score'])
+    df = re_order_df(df, ['Total_score', 'Base_score', 'Evi_score','Total_SNP'])
     df.sort_values(by='Total_score', ascending=False, inplace=True)
 
     for key in second_score_dict.keys():
@@ -156,6 +153,7 @@ def out_weight_genes(out, df, weight, base_scores, Phe, bed, function):
 def out_sites_genes(out,snp_bases,snp_genes,snp_GTs,Phe):
     gene_snp_count={}
     gene_snp_count_cor={}
+
     #logger.info("Outputing significance SNP function, GWAS-Pvalue")
     with open("%s.sign.BasicSite.xls" % (out),"w") as of1:
         of1.write("#ID\tChr\tPos\tRef\tAlt\tGene\tType\tRemarks\tP-GWAS\tP-CorPhe\n")
@@ -163,17 +161,19 @@ def out_sites_genes(out,snp_bases,snp_genes,snp_GTs,Phe):
             #    #logger.warning("Check SNP %s %s" %(rs[0],rs[1]))
             sID  = rs[0]
             base = snp_bases[sID]
+            #print(snp_GTs[sID],Phe)
             (pp1,p1,r)=stTest(snp_GTs[sID],Phe)     # student t-test SNP vs Phe
+            #print(pp1,p1,r)
 
             of1.write(f"{rs[0]}\t{base[0]}\t{base[1]}\t{base[3]}\t{base[4]}\t{rs[1]}\t{rs[2]}\t---\t{base[2]}\t{p1}\n")
-            
+
             gene_snp_count=Common.accumulateDict(gene_snp_count,1,rs[1],rs[2])
             gene_snp_count=Common.accumulateDict(gene_snp_count,1,rs[1],"Total_SNP")
-            gene_snp_count_cor=Common.accumulateDict(gene_snp_count,0,rs[1],rs[2])
-            gene_snp_count_cor=Common.accumulateDict(gene_snp_count,0,rs[1],"Total_SNP")
+            gene_snp_count_cor=Common.accumulateDict(gene_snp_count_cor,0,rs[1],rs[2])
+            gene_snp_count_cor=Common.accumulateDict(gene_snp_count_cor,0,rs[1],"Total_SNP")
             if p1 < 0.01:
-                gene_snp_count_cor=Common.accumulateDict(gene_snp_count,1,rs[1],rs[2])
-                gene_snp_count_cor=Common.accumulateDict(gene_snp_count,1,rs[1],"Total_SNP")
+                gene_snp_count_cor=Common.accumulateDict(gene_snp_count_cor,1,rs[1],rs[2])
+                gene_snp_count_cor=Common.accumulateDict(gene_snp_count_cor,1,rs[1],"Total_SNP")
 
     #print(gene_snp_count["evm.model.scaffold_1.1741"])
     return gene_snp_count,gene_snp_count_cor
@@ -188,28 +188,27 @@ def out_basic_genes(out,gene_snp_count,gene_snp_count_cor,gene_header,base_score
 
     out_dict={}
     for gene in gene_snp_count.keys():
-        #outs = [ f"{gene_snp_count[gene][x]}:{gene_snp_count_cor[gene][x]}" for x in gene_header ]
-        outs = [ gene_snp_count[gene][x] for x in gene_header ]
+        outs = [ gene_snp_count[gene][x] for x in gene_header]
         out_dict[gene] = dict(zip(gene_header,outs))
-  
-    #print(out_dict["evm.model.scaffold_1.1741"])
-
+    
     df_out = pd.DataFrame(out_dict).T
     df_out.index.name="Gene"
 
-    df_cal = cal_df_score(pd.DataFrame(gene_snp_count_cor).T,base_score_dict,"Base_score")
-    #df_cal = cal_df_score(df_out,base_score_dict,"Base_score")
-  
-    df_cal.index.name="Gene"
+    leaders=leader_snp(f"{out}.sign.BasicSite.xls")
 
+    df_cal = cal_df_score(pd.DataFrame(gene_snp_count_cor).T,base_score_dict,"Base_score")
+    df_cal.index.name="Gene"
     #print(df_cal)
 
     df_out["Base_score"]=df_cal["Base_score"]
-    #df_out["Base_score_normalized"]=df_cal["Base_score_normalized"]
+
+    df_out=df_out.join(leaders,how='left')
+    #print(df_out)
+
     df_out.sort_values(by='Base_score', ascending=False, inplace=True)
     df_nofunction = df_out.copy()
 
-    df_out = re_order_df(df_out, ['Total_SNP', 'Base_score'])
+    df_out = re_order_df(df_out, ['Base_score','Total_SNP'])
 
     if function:
         df_out=add_function(df_out,function) 
@@ -217,6 +216,54 @@ def out_basic_genes(out,gene_snp_count,gene_snp_count_cor,gene_header,base_score
     df_out.to_csv(f"{out}.sign.BasicGene.xls",sep="\t")
 
     return df_nofunction   
+
+
+
+def leader_snp(dfile):
+    df = pd.read_csv(dfile, sep="\t")
+
+    #print(df)
+    def type_priority(t):
+        t = t.lower()
+        if t == "syn":
+            return 0
+        elif t == "nosyn":
+            return 1
+        elif t == "intronic":
+            return 2
+        elif t == "splicing":
+            return 3
+        else:
+            match = re.search(r"(\d+)kb", t)
+            return 4 + (int(match.group(1)) if match else 10000)
+
+    df["TypePriority"] = df["Type"].apply(type_priority)
+
+    results = []
+
+    for gene, subdf in df.groupby("Gene"):
+        # Highest_SNP: P-GWAS最小值对应的记录
+        highest_row = subdf.loc[subdf["P-GWAS"].idxmin()]
+    
+        # Nearest_SNP: 多重排序（Type + P-GWAS）
+        sorted_subdf = subdf.sort_values(by=["TypePriority", "P-GWAS"])
+        nearest_row = sorted_subdf.iloc[0]
+    
+        results.append({
+            "Gene": gene,
+            "Highest_SNP_ID": highest_row["#ID"],
+            "Highest_SNP_Type": highest_row["Type"],
+            "Highest_SNP_P": highest_row["P-GWAS"],
+            "Nearest_SNP_ID": nearest_row["#ID"],
+            "Nearest_SNP_Type": nearest_row["Type"],
+            "Nearest_SNP_P": nearest_row["P-GWAS"]
+        })
+    
+    # 转为DataFrame查看或保存
+    leaders = pd.DataFrame(results)
+    leaders = leaders.set_index("Gene")
+    leaders.index.name="Gene"
+    return(leaders)
 
 
 def re_order_df(df, cols_to_front):
@@ -250,6 +297,7 @@ def check_header(regions,regions_score,eQTL,eQTL_score,snp_scores):
     base_score_dict = dict(zip(gene_header,snp_scores))
     gene_header.insert(0,"Total_SNP")
     return gene_header,base_score_dict
+
 
 
 def add_function(df,function_file):
@@ -401,7 +449,7 @@ def stTest(gt,Vals):
         t1,p1 = stats.ttest_ind(np.array(listType(gts[gtl[0]],"float")),np.array(listType(gts[gtl[1]],"float")))
     
     p=min(p1,p2,p3)
-    if p1 <0.05 or  p2 <0.05 or p3 <0.05:
+    if p1 <0.01 or  p2 <0.01 or p3 <0.01:
         return 1,p,gts
     else:
         return 0,p,gts

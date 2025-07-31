@@ -36,14 +36,9 @@ def main(args=None):
     samples=process_vcf_phe(args)
 
     if args.cov:
-        process_covariance(args.cov,samples)
+        cov_list=process_covariance(args.cov,samples)
 
     traits=process_gwas(args)
-
-    #snps = pd.read_csv("GWAS.map",header=None,sep="\t",names=["chrom","snp_id","unknow","pos"])
-    #snps.set_index("snp_id", inplace=True)                 # panda df速度更慢
-    #snps=Common.read_file("GWAS.map","dict",vals=[0,3],keys=[1])    
-    #significant=Common.judge_significant(sign,snps)
 
     snps=Common.read_file("GWAS.snpID","dict",vals=[0,1],keys=[2])    
     significant=Common.judge_significant(args.sign,snps)
@@ -63,7 +58,7 @@ def process_manhantun(traits,significant):
         df = pd.read_table(f"Traits.{trait}.emmax.ps.tsv", sep="\t")
         df['Value'] = -np.log10(df['Value'])
         cut = -np.log10(significant)
-        Visualize.manhatan_fig(df,cut,"-log(P)",f"Traits.{trait}")
+        Visualize.manhatan_fig_v1(df,cut,"-log(P)",f"Traits.{trait}")
         #Visualize.ManhantanMain(f"Traits.{trait}.emmax.ps.tsv",out=f"Traits.{trait}.emmax.ps.manhantun",sign=significant)
     Common.run_command(f"touch GWAS.manhantun.done")
 
@@ -93,31 +88,23 @@ def process_trait_output(trait,snps,significant):
             if float(ls[3]) <= significant[0]:
                 f2.write(f"{chrom}\t{pos}\t{ls[0]}\t{ls[3]}\n")
 
-    #Manhantun.ManhantanMain(f"Traits.{trait}.emmax.ps.tsv",out=f"Traits.{trait}.emmax.ps.manhantun",sign=significant)
-
-    #Manhantun.manhatan_fig(df,significant,ylab="-log10(P)",out="Traits.{trait}.manhatun",sub=None,hightlight=None)
-    #
-        # use panda df 
-            #row={'#CHROM': chrom,'POS': int(pos),'ID': str(ls[0]),'P':float(ls[3])}
-            #data.append(row)
-        #df = pd.DataFrame(data)            
-        #signDf=df[df['P'] < significant ]
-        #df.to_csv(f"Traits.{trait}.emmax.ps.tsv",index=False,sep="\t")
-        #signDf.to_csv(f"Traits.{trait}.emmax.ps.significant.tsv",index=False,sep="\t")
-
-
 
 def process_gwas(args):
     data,traits,samples = Common.read_matrix_data(f"GWAS.phe","h")
+    #print(data)
+    print(traits)
+    print(samples)
     print (f"Run GWAS with population size: {len(samples)} with {len(traits)} Traits")
     print (f"Traits for run: {traits}")
 
     cmds=[]
     for trait in traits:
+        #print(data[trait])
         trait_phes,samples = Common.sort_dict_by_list(data[trait],samples)
         Common.write_list_to_file(zip(samples,samples,trait_phes),f"Traits.{trait}.phe",vals=[])
+        #print(trait_phes)
         if args.cov:
-            cmds.append(f"{args.emmax}/emmax-intel64 -v -d 10 -t GWAS -k GWAS.aBN.kinf -p Traits.{trait}.phe -o Traits.{trait}.emmax -c GWAS.covariance")
+            cmds.append(f"{args.emmax}/emmax-intel64 -v -d 10 -t GWAS -k GWAS.aBN.kinf -p Traits.{trait}.phe -o Traits.{trait}.emmax  -c GWAS.covariance")
         else:
             cmds.append(f"{args.emmax}/emmax-intel64 -v -d 10 -t GWAS -k GWAS.aBN.kinf -p Traits.{trait}.phe -o Traits.{trait}.emmax")
     
@@ -128,7 +115,10 @@ def process_gwas(args):
 
 
 def process_vcf_phe(args):
-    if not Path("GWAS.prepared.done").exists():
+
+    # out 
+    vcf_samples=[]
+    if not Path("GWAS.snpID").exists():
         with open(args.vcf,"r") as f1, open("GWAS.snpID","w") as fo:
             for line in f1:
                 ls = line.strip().split("\t")
@@ -140,25 +130,43 @@ def process_vcf_phe(args):
                     else:
                         print(f"# There is no SNP-ID infomation cols in {args.vcf}, you can use the Vcftools module to add it")
                         exit(1)
+    else:
+        print(f"# File GWAS.snpID exists, passing") 
+        with open(args.vcf,"r") as f1:
+            for line in f1:
+                ls = line.strip().split("\t")
+                if line.startswith("#CHR"):
+                    vcf_samples = line.strip().split("\t")[9:]
+                    break
 
-        (phe_data,headinfo)=Common.read_file(args.phe,mode="dict",keys=[0],header=True)  
-        (phe_data,samples)=Common.sort_dict_by_list(phe_data,vcf_samples)
 
+    (phe_data,headinfo)=Common.read_file(args.phe,mode="dict",keys=[0],header=True)
+    (phe_data,samples)=Common.sort_dict_by_list(phe_data,vcf_samples)
+
+    if Path("GWAS.prepared.done").exists():
+        old_samples=Common.read_file("GWAS.sample","list",vals=[0])
+        if sorted(old_samples) == sorted(samples):
+            print(f"# The old samples equl the news samples. passing GWAS preparing")
+            Common.write_list_to_file(phe_data,"GWAS.phe",vals=[],header=headinfo)
+            return samples
+        else:
+            print(f"# GWAS.prepared.done exist,but the samples of pre_run is not equl with this run, please remove GWAS.prepared.done and rerun this commond!")
+            exit(1)
+    else:
         Common.write_list_to_file(phe_data,"GWAS.sample",vals=[0,0])
         Common.write_list_to_file(phe_data,"GWAS.phe",vals=[],header=headinfo)
-
         Common.run_command(f"{args.plink} --vcf {args.vcf} --allow-extra-chr --make-bed --out GWAS --keep GWAS.sample --maf {args.maf}")
-        Common.run_command(f"{args.plink} --bfile GWAS --out GWAS --output-missing-genotype 0 --recode 12 transpose")
-        Common.run_command(f"{args.emmax}/emmax-kin-intel64 -v -d 10 GWAS")   # Generate kinship matrix
+        Common.run_command(f"{args.plink} --bfile GWAS --out GWAS --allow-extra-chr --output-missing-genotype 0 --recode 12 transpose")
+        Common.run_command(f"{args.emmax}/emmax-kin-intel64 -v -x -d 10 GWAS")   # Generate kinship matrix
         Common.run_command(f"touch GWAS.prepared.done")
-
-    samples=Common.read_file("GWAS.sample","list",vals=[0])
-    return samples
+        return samples
 
 
 
 def process_covariance(cov_file,samples):
     """Process structure/PCA file"""
+
+
     cov_data=Common.read_file(cov_file,mode="dict",keys=[0],vals=[]) # read cov without header
     #print(cov_data)
     cov_data_new=[] 
@@ -167,9 +175,8 @@ def process_covariance(cov_file,samples):
         ls.insert(1,1)
         ls.insert(1,ls[0])
         cov_data_new.append(ls)
-    Common.write_list_to_file(cov_data_new,"GWAS.covariance",vals=[])
 
-
+    Common.write_list_to_file(cov_data_new,f"GWAS.covariance",vals=[])
 
 if __name__ == "__main__":
     main()

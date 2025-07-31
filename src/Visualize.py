@@ -9,7 +9,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 
-
+#Chrom   Pos     ID      Value   Order
 def get_args(args):
     parser = argparse.ArgumentParser(description="Processing muti-traits GWAS with Emmax form vcf file",
                                     formatter_class=Common.CustomFormatter
@@ -26,9 +26,9 @@ def get_args(args):
 
     manha_group = parser.add_argument_group('Manhantun optional arguments (manha)')
     manha_group.add_argument("--site_value",help="Gwas or Other site-value result file")
-    manha_group.add_argument("--chrom",help="Chromosom name column",type=str,default="CHROM") 
-    manha_group.add_argument("--pos",help="Maker pos column",type=str,default="POS")
-    manha_group.add_argument("--value",help="Value column",type=str,default="P")
+    manha_group.add_argument("--chrom",help="Chromosom name column",type=str,default="Chrom") 
+    manha_group.add_argument("--pos",help="Maker pos column",type=str,default="Pos")
+    manha_group.add_argument("--value",help="Value column",type=str,default="Value")
     manha_group.add_argument("--name",help="SNP name column",type=str,default="ID")  
     manha_group.add_argument("--sign",help="Significance cut line: B = 1/n || F = 0.05/n || top1 = top 0.01 || top5 = top 0.05  || a self-defined float",nargs="+",default=["B"])
     manha_group.add_argument("--log",help="change to log10 value",action="store_true",default=True)
@@ -63,7 +63,6 @@ def main(args=None):
 
 
 
-
 def ManhantanMain(args):
     
     name_col= {args.chrom:"Chrom",args.pos:"Pos",args.value:"Value",args.name:"ID"}
@@ -75,14 +74,115 @@ def ManhantanMain(args):
 
     colors=["#3274a1", "#e1812c"] if not args.colors else Common.read_file(args.colors,mode="list",vals=[0],skipAnnot=False)
     print(f"# Manhantun chromosomes color: {colors}")
-    hightlight=None if not args.hightlight else Common.read_file(args.hightlight,mode="dict",keys=[0],vals=[1,2])
+    hightlight = None if not args.hightlight else Common.read_file(args.hightlight,mode="dict",keys=[0],vals=[1,2])
     print(f"# Hightlight SNP markers: {hightlight} ")
 
-    manhatan_fig(df,cut,yname,args.out,args.sub,hightlight,colors)
+    manhatan_fig_v1(df,cut,yname,args.out,args.sub,hightlight,colors)
 
  
+def manhatan_fig_v1(df, cut, ylab, out, sub=None, hightlight=None,colors=["#3274a1", "#e1812c"],dpi=300):
+    """
+    绘制曼哈顿图，支持高亮SNP注释、染色体子集和多色，支持双向绘制（根据Order列）。
+    df: 包含 Chrom, Pos, Value, ID 四列的数据框（如果有Order列则用于双向绘图）
+    cut: 显著性阈值线，可以是一个或多个值的数组（会自动镜像到负方向）
+    ylab: y轴标签
+    out: 输出文件名（不带扩展名）
+    sub: 若指定，只画某条染色体
+    hightlight: 字典，key为SNP ID，value为注释文本
+    colors: 颜色数组用于交替染色
+    dpi: 输出图像分辨率
+    """
+    df = df.copy()
+    
+    # 检查是否有Order列，用于双向绘图
+    has_direction = 'Order' in df.columns
+    
+    # 如果指定了子集染色体
+    if sub:
+        df = df[df['Chrom'] == sub]
 
-def manhatan_fig(df, cut, ylab, out, sub=None, hightlight=None,colors=["#3274a1", "#e1812c"],dpi=300):
+    # 排序染色体
+    df['Chrom'] = df['Chrom'].astype(str)
+    chrom_order = Common.get_sorted_chromosomes(df['Chrom'].unique())
+    df['Chrom'] = pd.Categorical(df['Chrom'], categories=chrom_order, ordered=True)
+    df = df.sort_values(['Chrom', 'Pos'])
+
+    # 如果有方向信息，调整Value值
+    if has_direction:
+        df['Value'] = df.apply(lambda row: -row['Value'] if row['Order'] == '-' else row['Value'], axis=1)
+
+    # 计算位置偏移
+    df['ind'] = range(len(df))
+    df_grouped = df.groupby('Chrom')
+
+    # 绘图
+    fig, ax = plt.subplots(figsize=(16, 8))
+
+    x_labels = []
+    x_labels_pos = []
+    
+    for i, (name, group) in enumerate(df_grouped):
+        print(f"# Plotting Chrom: {name} into manhattan figure")
+        ax.scatter(group['ind'], group['Value'],
+                   color=colors[i % len(colors)], s=10)
+        x_labels.append(name)
+        x_labels_pos.append((group['ind'].iloc[0] + group['ind'].iloc[-1]) / 2)
+
+    # 添加cut线（双向）
+    for c in cut:
+        ax.axhline(y=c, color='gray', linestyle='--', linewidth=1)
+        if has_direction:
+            ax.axhline(y=-c, color='gray', linestyle='--', linewidth=1)
+
+    # 高亮 SNP 和注释
+    if hightlight:
+        highlight_ids = list(hightlight.keys())
+        highlight_df = df[df['ID'].isin(highlight_ids)]
+    
+        # 单独处理每个高亮 SNP
+        for _, row in highlight_df.iterrows():
+            snp_id = row['ID']
+            x = row['ind']
+            y = row['Value']
+            label, color = hightlight.get(snp_id, [snp_id, 'red'])
+            
+            # 画点（总是改变颜色）
+            ax.scatter(x, y, color=color, s=25, zorder=10)
+            
+            # 只有当注释文本不是"-"时才添加标注
+            if label != "-":
+                y_text = y + (0.8 if y >= 0 else -0.8)  # 文本高度（根据方向调整）
+                ax.annotate(label,
+                           xy=(x, y), xycoords='data',
+                           xytext=(x, y_text), textcoords='data',
+                           arrowprops=dict(arrowstyle='-', color=color, lw=0.8),
+                           ha='center', va=('bottom' if y >= 0 else 'top'), 
+                           fontsize=8, color=color, rotation=45)
+
+    # 设置轴
+    ax.set_xticks(x_labels_pos)
+    ax.set_xticklabels(x_labels)
+    ax.set_xlabel('Chromosome')
+    ax.set_ylabel(ylab)
+    ax.set_title(out)
+    
+    # 如果有方向信息，调整y轴范围并添加零线
+    if has_direction:
+        y_max = max(df['Value'].max(), abs(df['Value'].min()))
+        ax.set_ylim(-y_max*1.1, y_max*1.1)
+        ax.axhline(y=0, color='black', linestyle='-', linewidth=0.5)
+
+
+    ticks = ax.get_yticks()
+    ax.set_yticklabels([f"{abs(tick):g}" for tick in ticks])
+
+    plt.tight_layout()
+    plt.savefig(f"{out}.manhattan.png", dpi=dpi)
+    print(f"# Finish output manhattan plot in {out}.manhattan.png")
+
+
+
+def manhatan_fig_v0(df, cut, ylab, out, sub=None, hightlight=None,colors=["#3274a1", "#e1812c"],dpi=300):
     """
     绘制曼哈顿图，支持高亮SNP注释、染色体子集和多色。
     df: 包含 Chrom, Pos, Value, ID 四列的数据框

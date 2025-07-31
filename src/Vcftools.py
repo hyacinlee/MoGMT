@@ -19,7 +19,9 @@ def get_args(args):
     parser.add_argument("-k","--keep",help="Keep sampels in files, if --rename_samples is activated, two columns will be required",type=str,default=None)
     parser.add_argument("-t","--tags",help="Retain the information of the specified tags like [ GT AD DP ...]",nargs="+",default=None)
     parser.add_argument("-a","--add_ids",help="Add SNP-ID information in the format of chr_pos",action="store_true",default=None)
+    parser.add_argument("-d","--diploid",help="Convert the haploid GT to the pseudo diploid GT, 0 -> 0/0, 1 -> 1/1",action="store_true",default=None)
     parser.add_argument("-s","--simplify",help="Filter out all unnecessary information and retain only the simplest genotype.",action="store_true",default=None)
+    parser.add_argument("--keep_header",help="Keep vcf header info in simplify mode",action="store_true",default=None)
     parser.add_argument("--rename_chr",help="Rename the Chromosomes according to the relationship specified in --chr. Chromosomes not in the file will be discarded",action="store_true",default=None)
     parser.add_argument("--rename_sample",help="Rename the Sampels according to the relationship specified in --keep. Samples not in the file will be discarded",action="store_true",default=None)
 
@@ -47,7 +49,9 @@ def main(args=None):
     with open(args.vcf) as fin,open(args.out, 'w') as fout:
         for line in fin:
             if line.startswith('##'):      # annovar info
-                if args.simplify:
+                if args.keep_header:
+                    fout.write(line)
+                elif args.simplify:
                     continue
                 else:
                     fout.write(line)
@@ -82,16 +86,20 @@ def main(args=None):
 
                 parts[8] = ":".join(need_tags)
 
-                if not need_tags == all_tags:
+
+                if not need_tags == all_tags or args.diploid:
                     for i in range(9, len(parts)):
-                        parts[i] = format_sample_info(parts[i],all_tags,need_tags)
+                        parts[i] = format_sample_info(parts[i],all_tags,need_tags,args.diploid)
                 
                 fout.write("\t".join(parts)+"\n")
 
 
 
-def format_sample_info(inf,formats,need_tags,simplify=None):
+def format_sample_info(inf,formats,need_tags,diploid=None):
+    #print(diploid) 
     info_dict=dict(zip(formats,inf.split(':')))
+    if diploid:
+        info_dict["GT"] = info_dict["GT"]+"/"+info_dict["GT"]
     new_inf=(":".join([info_dict[x] for x in need_tags]))
     return new_inf
 
