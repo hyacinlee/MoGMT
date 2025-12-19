@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import sys
 import pandas as pd
 import Common
@@ -18,11 +18,14 @@ RunCmd :
 '''
     )
     parser.add_argument('-v','--vcf',help='vcf file',required=True,type=str)
+    parser.add_argument('-t','--type',help='Use Euclidean-distance or SNP-index',type=str,choices=["ed","index"],required=True)
     parser.add_argument('-s','--size',help='size of windows, kb',type=int,default=500)
     parser.add_argument('-o','--out',help='pre-name of out files',type=str,default="BSA")
-    parser.add_argument('--min',help='min site of a window',type=int,default=20)
-    parser.add_argument('--ed',help='Use Euclidean-distance',type=int,default=None)
-    parser.add_argument('--index',help='Use SNP-index',type=int,default=None)
+    parser.add_argument('--min',help='min site of a window',type=int,default=10)
+    parser.add_argument('--s1',help='Name of Segregation Bulk1',type=str,default=None,required=True)
+    parser.add_argument('--s2',help='Name of Segregation Bulk2',type=str,default=None,required=True)
+    parser.add_argument('--p1',help='Name of Parent Bulk1 ',type=str,default=None)
+    parser.add_argument('--p2',help='Name of Parent Bulk2',type=str,default=None)
     
     parsed_args = parser.parse_args(args)
     print (parsed_args)

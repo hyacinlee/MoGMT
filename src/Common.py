@@ -8,6 +8,8 @@ import logging
 import numpy as np
 import pandas as pd
 from scipy import stats
+import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter,
@@ -74,6 +76,7 @@ def read_file(infile,mode="list",vals=[],keys=[],header=False,sep="\t",noSplit=F
 def read_file_accumulateDict(infile,vals=[0],key1=[1],key2="no",sep="\t"):
 
     result={}
+    print(f"# Read file {infile} to accumulateDict,vals={[vals]},key1={[key1]},key2={[key2]}")
     with open(infile,"r") as inf:
         for line in inf:
             if line.startswith("#"):    # start with #
@@ -82,8 +85,9 @@ def read_file_accumulateDict(infile,vals=[0],key1=[1],key2="no",sep="\t"):
             vv = return_vals(vals,line,sep,False)
             #print(vv)
 
-            key1vv = return_vals(key1,line,sep,False)
             #print(key1)
+            key1vv = return_vals(key1,line,sep,False)
+            #
 
             if not key2 =="no":
                 key2vv = return_vals(key2,line,sep,False)
@@ -256,7 +260,14 @@ def list_type(mylist,types):
 def run_command(cmd, check=True):
     """Helper function to run shell commands"""
     print(f"Running: {cmd}")
-    subprocess.run(cmd, shell=True, check=check)
+    try:
+        subprocess.run(cmd, shell=True, check=check)
+    except subprocess.CalledProcessError as e:
+        print(f"Command failed: {cmd}")
+        print(f"   Exit code: {e.returncode}")
+        if e.stderr:
+            print(f"   Stderr: {e.stderr.decode() if isinstance(e.stderr, bytes) else e.stderr}")
+        exit(1)
 
 
 def check_path_exists(path,mode="e"):
@@ -356,6 +367,71 @@ def rename_dataframe(df,chrom,pos,name,value):
     name_col= {chrom:"#CHROM",pos:"POS",value:"P",name:"ID"}
     df = df.rename(columns=name_col)
     return df
+
+
+
+def run_parallel(tasks, max_workers=4, mode="cmd", capture_output=True):
+    """
+    并行运行命令或函数
+    :param tasks: 
+        - 如果 mode="cmd"，tasks 是命令字符串列表
+        - 如果 mode="func"，tasks 是 (func, args, kwargs) 的列表
+    :param max_workers: 最大并行数
+    :param mode: "cmd" 或 "func"
+    :param capture_output: 对命令是否捕获输出 (仅对 mode="cmd" 有效)
+    :return: {task: (exit_code/result, stdout, stderr/exception)}
+    """
+    results = {}
+
+    def _run_cmd(cmd):
+        if capture_output:
+            res = subprocess.run(cmd, shell=True,
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE,
+                                 universal_newlines=True)  # 等价于 text=True
+        else:
+            res = subprocess.run(cmd, shell=True)
+        return res.returncode, res.stdout if capture_output else "", res.stderr if capture_output else ""
+
+    def _run_func(func, *args, **kwargs):
+        try:
+            result = func(*args, **kwargs)
+            return 0, result, ""
+        except Exception as e:
+            return 1, None, str(e)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        if mode == "cmd":
+            futures = {executor.submit(_run_cmd, cmd): cmd for cmd in tasks}
+        elif mode == "func":
+            futures = {
+                executor.submit(_run_func, func, *args, **kwargs): f"{func.__name__}{args}{kwargs}"
+                for func, args, kwargs in tasks
+            }
+        else:
+            raise ValueError("mode must be 'cmd' or 'func'")
+
+        for future in as_completed(futures):
+            task = futures[future]
+            try:
+                results[task] = future.result()
+            except Exception as e:
+                results[task] = (-1, None, str(e))
+
+    
+    failed = [task for task, (code, _, err) in results.items() if code != 0]
+    if failed:
+        print("unfinished jobs: ")
+        for task in failed:
+            code, _, err = results[task]
+            print(f"  - {task}, exit_code={code}, error={err}")
+        sys.exit(1)  
+    else:
+        print("All jobs done！")
+
+    return results
+    return results
+    
 
 
 

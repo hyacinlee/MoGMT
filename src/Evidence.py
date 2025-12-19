@@ -233,9 +233,11 @@ def leader_snp(dfile):
             return 2
         elif t == "splicing":
             return 3
+        elif t == "eQTL":
+            return 4
         else:
             match = re.search(r"(\d+)kb", t)
-            return 4 + (int(match.group(1)) if match else 10000)
+            return 5 + (int(match.group(1)) if match else 10000)
 
     df["TypePriority"] = df["Type"].apply(type_priority)
 
@@ -276,7 +278,7 @@ def annot_genes_eqtl(eQTL_file,snp_bases,snp_genes):
 
     print(f"# eQTL evidence founded, use eQTL file: {eQTL_file} to identifed candidate genes")
     Common.check_path_exists(eQTL_file)
-    eqlt_snps  = Common.read_file_accumulateDict(eQTL_file,vals=[1],key1=0)
+    eqlt_snps  = Common.read_file_accumulateDict(eQTL_file,vals=[1],key1=[0])
 
     for ss in eqlt_snps.keys():
         if ss in snp_bases:
@@ -328,7 +330,7 @@ def evidence_loci(file,df_handle,name,bedfile):
     gene_location = Common.read_file(bedfile,mode="dict",keys=[4],vals=[0,1,2,3])
     #print(gene_loci)
     #locis = Common.read_file(file,mode="dict",vals=[0,1,2,3],keys=[0])   # chrom start end id
-    locis = Common.read_file_accumulateDict(file,vals=[],key1=0)
+    locis = Common.read_file_accumulateDict(file,vals=[0,1,2,3],key1=[0])
 
     gene_value={}
     gene_info={}
@@ -520,6 +522,8 @@ def read_annovar(vf,evf,snp_pos2id):
         if ls[0] == "exonic":
             for gene in pgs:
                 snp_exon.append(tags)
+        elif ls[0] == "splicing":
+            snp_genes.append([snp_pos2id[tags],pgs[0],ls[0]])
         else:                       
             for gene in pgs:
                 snp_genes.append([snp_pos2id[tags],gene,ls[0]])
