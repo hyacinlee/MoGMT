@@ -14,14 +14,14 @@ import sys
 #   subprocess
 
 SUB_COMMANDS = {
-    "Emmax": "Emmax", 
+    "GWAS": "GWAS", 
     "Evidence": "Evidence",
     "Phenotype": "Phenotype",
     "Visualize": "Visualize",
     "Vcftools" : "Vcftools",
     "BulkSegAna":"BulkSegAna",
     "TransAsso": "TransAsso",
-    "Colocalization":"Colocalization"
+    "Candidate":"Candidate"
 }
 
 def main():
@@ -30,19 +30,24 @@ def main():
         description='''
     Main Prgram of Multi-omics genetic mapping tools , Plase choose Function from:
 
+        #--------------------------------  Main module   --------------------------------#
+
         Vcftools     :   The module for processing vcf file , including format conversion, adding or simplifying information, renaming chromosomes or sample names, etc.
 
         Phenotype    :   The module for processing phenotypic data, including clustering, dimensionality reduction, etc. 
 
-        Emmax        :   The module for conducting association analysis using Emmax.
+        GWAS         :   The module for conducting association analysis using Emmax.
 
         Evidence     :   The module for evidence genes use multi-omics results.
 
         Visualize    :   The module for output Manhantun or other figures. 
 
-        Colocalization : The module for perform Co-localization with mutiple traits.
-
         BulkSegAna   :   The module for perform Bulked Segregant Analysis use vcf files.
+
+
+        #------------------------------  Additional module  ------------------------------#
+
+        Candidate   :   The module for select candidate genes using muti-methods.
 
         TransAsso    :   The module for perform Association analysis between gene expression matrix and phenotype in population.
         
@@ -50,19 +55,26 @@ def main():
     Version   : 0.1
         ''',
         add_help=False,
-        usage="%(prog)s <command> [args]"
+        usage="%(prog)s < Function > [args]"
     )
     parser.add_argument(
-        "command",
+        "Function",
         choices=SUB_COMMANDS.keys(),
         help="Avaliable Functions",
     )
    
+    if len(sys.argv) == 1:
+        parser.print_help()
+        sys.exit(0)
+
+    
+
     # add src to pathon libs 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     src_dir = os.path.join(script_dir, 'src')
     if src_dir not in sys.path:
         sys.path.append(src_dir)
+
  
     if "-h" in sys.argv or "--help" in sys.argv:
         if len(sys.argv) == 2:
@@ -78,15 +90,13 @@ def main():
     args, remaining_args = parser.parse_known_args()
     
     # 加载并执行子命令
-    main_func = load_module(args.command)
-    main_func(remaining_args)  # 传递剩余参数
+    main_func = load_module(args.Function)
+    main_func(remaining_args) # 传递剩余参数
 
 def load_module(module_name):
     """动态加载子命令模块并返回其 main 函数"""
     try:
         module = importlib.import_module(SUB_COMMANDS[module_name])
-        #print(os.path.exists("src/Emmax.py"))
-        #module = importlib.import_module("src.Emmax")
         return module.main
     except ImportError as e1:
         print(f"ImportError:\n{e1}")
