@@ -21,7 +21,8 @@ SUB_COMMANDS = {
     "Vcftools" : "Vcftools",
     "BulkSegAna":"BulkSegAna",
     "TransAsso": "TransAsso",
-    "Candidate":"Candidate"
+    "Candidate":"Candidate",
+    "GeneEffect":"GeneEffect"
 }
 
 def main():
@@ -47,7 +48,9 @@ def main():
 
         #------------------------------  Additional module  ------------------------------#
 
-        Candidate   :   The module for select candidate genes using muti-methods.
+        GeneEffect  :    The module for Post-GWAS to identify gene-level effect
+
+        Candidate   :    The module for select candidate genes using muti-methods.
 
         TransAsso    :   The module for perform Association analysis between gene expression matrix and phenotype in population.
         

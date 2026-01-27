@@ -42,16 +42,17 @@ def main(args=None):
 
     traits=process_gwas(args)
 
-    snps=Common.read_file("GWAS.snpID","dict",vals=[0,1],keys=[2])    
+    snps=Common.read_file("GWAS.snpID","dict",vals=[0,1],keys=[2])
+
     significant=Common.judge_significant(args.sign,snps)
 
     with open("GWAS.threshold","w") as f:
         f.write(f"{significant}\n")
  
     if not Path("GWAS.outputs.done").exists():
-        process_outputs(traits,snps,significant,args.threads)
+        process_outputs(traits,snps,significant,args.threads,len(samples))
 
-    if not Path("GWAS.mahantun.done").exists():
+    if not Path("GWAS.manhantun.done").exists():
         process_manhantun(traits,significant)
 
 
@@ -69,37 +70,44 @@ def process_manhantun(traits,significant):
 
 
 
-def process_outputs(traits,snps,significant,threads):
+def process_outputs(traits,snps,significant,threads,sampel_number):
     tasks=[]
     for trait in traits:
-        tasks.append((process_trait_output,(trait,snps,significant),{}))
+        #process_trait_output(trait,snps,significant,sampel_number)
+        tasks.append((process_trait_output,(trait,snps,significant,sampel_number),{}))
 
-    Common.run_parallel(tasks, max_workers=threads, mode="func")
+    Common.run_parallel2(tasks, max_workers=threads, mode="func")
 
     Common.run_command(f"touch GWAS.outputs.done")
 
     #return significant
 
 
-def process_trait_output(trait,snps,significant):
+def process_trait_output(trait,snps,significant,sampel_number):
     with open(f"Traits.{trait}.emmax.ps", "r") as f,open(f"Traits.{trait}.emmax.ps.tsv", "w") as f1,open(f"Traits.{trait}.emmax.ps.significant.tsv", "w") as f2:
-        f1.write("Chrom\tPos\tID\tValue\n")
-        f2.write("Chrom\tPos\tID\tValue\n")
+        f1.write("Chrom\tPos\tID\tValue\tBeta\tSE\tR2\n")
+        f2.write("Chrom\tPos\tID\tValue\tBeta\tSE\tR2\n")
 
         #data=[]
         for l in f:
             ls = l.strip().split("\t")
             #chrom, pos = snps.loc[ls[0], ["chrom", "pos"]]
+            if float(ls[3]) == 0.0 : # Avoid invalid p-values , update 20260127
+                ls[3] = 0.99
+            if float(ls[3]) == 1.0 : 
+                ls[3] = 0.99
             chrom, pos = snps[ls[0]]
-            f1.write(f"{chrom}\t{pos}\t{ls[0]}\t{ls[3]}\n")
+            t = float(ls[1])/float(ls[2])
+            r2 = t**2/(t**2+sampel_number-2)
+            
+            f1.write(f"{chrom}\t{pos}\t{ls[0]}\t{ls[3]}\t{ls[1]}\t{ls[2]}\t{r2}\n")
             if float(ls[3]) <= significant[0]:
-                f2.write(f"{chrom}\t{pos}\t{ls[0]}\t{ls[3]}\n")
+                f2.write(f"{chrom}\t{pos}\t{ls[0]}\t{ls[3]}\t{ls[1]}\t{ls[2]}\t{r2}\n")
 
 
 def process_gwas(args):
     data,traits,samples = Common.read_matrix_data(f"GWAS.phe","h")
-    print(traits)
-    print(samples)
+
     print (f"# Run GWAS with population size: {len(samples)} with {len(traits)} Traits")
     print (f"# Traits for run: {traits}")
 

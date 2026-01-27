@@ -8,7 +8,7 @@ import pandas as pd
 import Common
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
-from qmplot import manhattanplot
+#from qmplot import manhattanplot
 from scipy import stats
 from cyvcf2 import VCF
 
@@ -76,11 +76,11 @@ def main(args=None):
         exit(0)
 
     name_col= {args.chrom:"CHROM",args.pos:"POS",args.value:"P",args.name:"ID"}
-    df = df.rename(columns=name_col)
+    snp_df = df.rename(columns=name_col)
 
     gene_header,base_score_dict = check_header(args.regions,args.regions_score,args.eQTL,args.eQTL_score,args.snp_scores)
 
-    (snp_bases,snp_pos2id) = significance(df)
+    (snp_bases,snp_pos2id) = significance(snp_df)
     
     #logger.info(f"Reading Candidata SNP Genotype info from {args.vcf}")
     print(f"Reading Candidata SNP Genotype info from {args.vcf}")
@@ -93,16 +93,14 @@ def main(args=None):
     snp_genes = annot_genes(args.bed,args.regions,snp_pos2id,snp_genes)
 
     if args.eQTL:
-        snp_genes=annot_genes_eqtl(args.eQTL,snp_bases,snp_genes)
+        snp_genes=annot_genes_eqtl(args.eQTL,snp_bases,snp_genes,args.bed)
 
-
-    #   print(snp_genes)
-
+    #print(snp_genes)
     #logger.info("Reading Phenotype data from %s" %(args.phe)) 
     Phe = Common.read_file(args.phe,mode="dict",keys=[0],vals=[2])
     #Phe = readTableDict(args.phe,0,2)
 
-    (gene_snp_count,gene_snp_count_cor)=out_sites_genes(out,snp_bases,snp_genes,snp_GTs,Phe)
+    (gene_snp_count,gene_snp_count_cor)=out_sites_genes(out,snp_bases,snp_genes,snp_GTs,Phe,snp_df)
 
     df_base = out_basic_genes(out,gene_snp_count,gene_snp_count_cor,gene_header,base_score_dict,args.function)
 
@@ -150,22 +148,29 @@ def out_weight_genes(out, df, weight, base_scores, Phe, bed, function):
     df.to_csv(f"{out}.sign.WeightGenes.xls",sep="\t")    
 
 
-def out_sites_genes(out,snp_bases,snp_genes,snp_GTs,Phe):
+def out_sites_genes(out,snp_bases,snp_genes,snp_GTs,Phe,snp_df):
     gene_snp_count={}
     gene_snp_count_cor={}
-
+    #   print(snp_df)
     #logger.info("Outputing significance SNP function, GWAS-Pvalue")
     with open("%s.sign.BasicSite.xls" % (out),"w") as of1:
-        of1.write("#ID\tChr\tPos\tRef\tAlt\tGene\tType\tRemarks\tP-GWAS\tP-CorPhe\n")
+        if "R2" in snp_df.columns:
+            of1.write("ID\tChr\tPos\tRef\tAlt\tGene\tType\tDistance\tR2\tP-GWAS\tP-CorPhe\n")
+        else:
+            of1.write("ID\tChr\tPos\tRef\tAlt\tGene\tType\tDistance\tP-GWAS\tP-CorPhe\n")
+
         for rs in sorted(snp_genes,key=lambda x: snp_bases[x[0]][2]):
             #    #logger.warning("Check SNP %s %s" %(rs[0],rs[1]))
             sID  = rs[0]
             base = snp_bases[sID]
             #print(snp_GTs[sID],Phe)
             (pp1,p1,r)=stTest(snp_GTs[sID],Phe)     # student t-test SNP vs Phe
-            #print(pp1,p1,r)
 
-            of1.write(f"{rs[0]}\t{base[0]}\t{base[1]}\t{base[3]}\t{base[4]}\t{rs[1]}\t{rs[2]}\t---\t{base[2]}\t{p1}\n")
+            if "R2" in snp_df.columns:
+                r2 = snp_df.loc[snp_df['ID'] == sID, 'R2'].values[0].round(4)
+                of1.write(f"{rs[0]}\t{base[0]}\t{base[1]}\t{base[3]}\t{base[4]}\t{rs[1]}\t{rs[2]}\t{rs[3]}\t{r2}\t{base[2]}\t{p1}\n")
+            else:
+                of1.write(f"{rs[0]}\t{base[0]}\t{base[1]}\t{base[3]}\t{base[4]}\t{rs[1]}\t{rs[2]}\t{rs[3]}\t{base[2]}\t{p1}\n")
 
             gene_snp_count=Common.accumulateDict(gene_snp_count,1,rs[1],rs[2])
             gene_snp_count=Common.accumulateDict(gene_snp_count,1,rs[1],"Total_SNP")
@@ -175,15 +180,13 @@ def out_sites_genes(out,snp_bases,snp_genes,snp_GTs,Phe):
                 gene_snp_count_cor=Common.accumulateDict(gene_snp_count_cor,1,rs[1],rs[2])
                 gene_snp_count_cor=Common.accumulateDict(gene_snp_count_cor,1,rs[1],"Total_SNP")
 
-    #print(gene_snp_count["evm.model.scaffold_1.1741"])
     return gene_snp_count,gene_snp_count_cor
     
 
 def out_basic_genes(out,gene_snp_count,gene_snp_count_cor,gene_header,base_score_dict,function):
 
     gene_snp_count = Common.fill_double_dict_value(gene_snp_count,gene_header,0)
-    #print(gene_snp_count["evm.model.scaffold_1.1741"])
-    #print(gene_header)
+
     gene_snp_count_cor = Common.fill_double_dict_value(gene_snp_count_cor,gene_header,0)
 
     out_dict={}
@@ -253,12 +256,14 @@ def leader_snp(dfile):
     
         results.append({
             "Gene": gene,
-            "Highest_SNP_ID": highest_row["#ID"],
-            "Highest_SNP_Type": highest_row["Type"],
-            "Highest_SNP_P": highest_row["P-GWAS"],
-            "Nearest_SNP_ID": nearest_row["#ID"],
-            "Nearest_SNP_Type": nearest_row["Type"],
-            "Nearest_SNP_P": nearest_row["P-GWAS"]
+            "Highest_ID": highest_row["ID"],
+            "Highest_Type": highest_row["Type"],
+            "Highest_P": highest_row["P-GWAS"],
+            "Highest_Dis": highest_row["Distance"],
+            "Nearest_ID": nearest_row["ID"],
+            "Nearest_Type": nearest_row["Type"],
+            "Nearest_P": nearest_row["P-GWAS"],
+            "Nearest_Dis": highest_row["Distance"]
         })
     
     # 转为DataFrame查看或保存
@@ -274,18 +279,37 @@ def re_order_df(df, cols_to_front):
     return df  
 
 
-def annot_genes_eqtl(eQTL_file,snp_bases,snp_genes):
+def annot_genes_eqtl(eQTL_file,snp_bases,snp_genes,bedfile):
 
     print(f"# eQTL evidence founded, use eQTL file: {eQTL_file} to identifed candidate genes")
     Common.check_path_exists(eQTL_file)
     eqlt_snps  = Common.read_file_accumulateDict(eQTL_file,vals=[1],key1=[0])
 
+    gene_location = Common.read_file(bedfile,mode="dict",keys=[4],vals=[0,1,2,3])
+
     for ss in eqlt_snps.keys():
         if ss in snp_bases:
             for g in eqlt_snps[ss]:
-                snp_genes.append([ss,g,"eQTL"])
+                if g not in gene_location:
+                    dis = "None"
+                else:
+                    s=int(gene_location[g][1])
+                    e=int(gene_location[g][2])
+                #print(snp_bases[ss])
+                    cid,pos = snp_bases[ss][0],snp_bases[ss][1]
+                    if not cid  == gene_location[g][0]:
+                        dis = "Trans"
+                    else:
+                        if int(pos)  > e:
+                            dis = int(pos)-e+1  
+                        elif int(pos) < s:
+                            dis = s - int(pos)+1
+                        else:
+                            dis=0
+                snp_genes.append([ss,g,"eQTL",dis])
 
     return snp_genes
+
 
 def check_header(regions,regions_score,eQTL,eQTL_score,snp_scores):
     gene_header=["NoSyn","Syn","intronic","splicing"]
@@ -314,6 +338,8 @@ def add_function(df,function_file):
 
 
 def cal_df_score(df,weights,name):
+    #print(df)
+    #print(weights)
     weight_dict = {col: float(val) for col, val in weights.items()}
     df[f'{name}_tmp'] = sum(df[col] * weight for col, weight in weight_dict.items())
     df[f'{name}'] = df[f'{name}_tmp'] / df[f'{name}_tmp'].sum() *100
@@ -354,8 +380,13 @@ def evidence_loci(file,df_handle,name,bedfile):
 def evidence_genes(file,df_handle,name):
     info={}
     value={}
-
-    genes_evi = Common.read_file(file,mode="dict",keys=[0],vals=[0,1,2],sep="\t")
+    try:
+        genes_evi = Common.read_file(file,mode="dict",keys=[0],vals=[0,1,2],sep="\t")
+    except Exception:
+        print(f"###")
+        print(f"# Reading Error! {file} must have 3 columns: gene_id value info")
+        print(f"###")
+        exit(1)
 
     for gene in df_handle.index.tolist():
         if gene in genes_evi:
@@ -523,10 +554,10 @@ def read_annovar(vf,evf,snp_pos2id):
             for gene in pgs:
                 snp_exon.append(tags)
         elif ls[0] == "splicing":
-            snp_genes.append([snp_pos2id[tags],pgs[0],ls[0]])
+            snp_genes.append([snp_pos2id[tags],pgs[0],ls[0],0])
         else:                       
             for gene in pgs:
-                snp_genes.append([snp_pos2id[tags],gene,ls[0]])
+                snp_genes.append([snp_pos2id[tags],gene,ls[0],0])
 
 
     for le in open(evf,"r"):
@@ -536,11 +567,14 @@ def read_annovar(vf,evf,snp_pos2id):
         if tags in snp_exon:
             #print(tags,les)
             gene=les[2].split(":")[0]
+            if gene == "UNKNOW":
+                print(f"# UNKNOW gene information in {evf}, please check it.")
+                exit(1)
             #print (le)
             if "nonsynonymous"  in les[1]:
-                snp_genes.append([snp_pos2id[tags],gene,"NoSyn"])
+                snp_genes.append([snp_pos2id[tags],gene,"NoSyn",0])
             else:
-                snp_genes.append([snp_pos2id[tags],gene,"Syn"])
+                snp_genes.append([snp_pos2id[tags],gene,"Syn",0])
 
     return snp_genes
 
@@ -561,10 +595,10 @@ def annot_genes(bedfile,regions,snp_pos2id,snp_genes):
             cid,pos = pos_inf.split("#")
             if gene_location[gene][0] == cid:
                 for region_size in regions:
-                    if int(pos) - e < int(region_size)*1000 and  int(pos) > e:
-                        snp_genes.append([snp_pos2id[pos_inf],gene,f"{region_size}Kb"])
-                    elif s - int(pos) < int(region_size)*1000 and int(pos) <s:
-                        snp_genes.append([snp_pos2id[pos_inf],gene,f"{region_size}Kb"])
+                    if int(pos) - e < int(region_size)*1000 and  int(pos) > e:    # s e pos  
+                        snp_genes.append([snp_pos2id[pos_inf],gene,f"{region_size}Kb",int(pos)-e+1])
+                    elif s - int(pos) < int(region_size)*1000 and int(pos) <s:    # pos s e 
+                        snp_genes.append([snp_pos2id[pos_inf],gene,f"{region_size}Kb",s-int(pos)+1])
                     else:
                         continue
 

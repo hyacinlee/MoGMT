@@ -10,6 +10,7 @@ import pandas as pd
 from scipy import stats
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
 class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter,
@@ -323,19 +324,28 @@ def get_sorted_chromosomes(chrom_list):
     return [info[2] for info in chrom_info]
 
 
-def judge_significant(sign,df):
+def judge_significant(sign,df,column_name=None):
 
     cuts = []
     for cut in sign:
-
         if cut == "B":
             cuts.append(float(1)/len(df))
-            print(f"# The significance threshold is {cut} ")
+            #print(f"# The significance threshold is {cut} ")
         elif cut == "F":
             cuts.append(float(0.05)/len(df))
-            print(f"# The significance threshold is {cut} ")
+            #print(f"# The significance threshold is {cut}")
+        elif cut == "top1":
+            data = df[column_name].dropna().values
+            cuts.append(np.percentile(data, 100 * (1 - 0.01)))
+        elif cut == "top5":
+            data = df[column_name].dropna().values
+            cuts.append(np.percentile(data, 100 * (1 - 0.05)))
         else:
-            cuts.append(float(cut))
+            try:
+                cuts.append(float(cut))
+            except ValueError:
+                print("# -sign must be [B,F,top1,top5,float]")
+
 
     print(f"# The significance threshold is {cuts}")
     return cuts
@@ -363,11 +373,62 @@ def search_cloesd_region(gene,locis):
     return overlapping_regions
 
 
+
+def merge_overlapping_intervals(df):
+    """ 
+    input  
+        df: DataFrame, has 'Chrom', 'Start', 'End'，and sorted by Chrom and Start
+    return 
+        merged_df: DataFrame, in 'Chrom', 'Start', 'End' 
+    """
+    
+    if df.empty:
+        return pd.DataFrame(columns=['Chrom', 'Start', 'End'])
+    
+    #df['Start'] = df['Start'].astype(int)
+    #df['End'] = df['End'].astype(int)
+    
+    merged_intervals = []
+    
+    current_chrom = df.iloc[0]['Chrom']
+    current_start = df.iloc[0]['Start']
+    current_end = df.iloc[0]['End']
+    
+    for i in range(1, len(df)):
+        row = df.iloc[i]
+        chrom = row['Chrom']
+        start = row['Start']
+        end = row['End']
+        
+        if (chrom == current_chrom and 
+            start <= current_end and 
+            end >= current_start):
+            current_end = max(current_end, end)
+        else:
+            merged_intervals.append({
+                'Chrom': current_chrom,
+                'Start': current_start,
+                'End': current_end
+            })
+            
+            current_chrom = chrom
+            current_start = start
+            current_end = end
+    
+    merged_intervals.append({
+        'Chrom': current_chrom,
+        'Start': current_start,
+        'End': current_end
+    })
+    
+    merged_df = pd.DataFrame(merged_intervals)
+    return merged_df
+
+
 def rename_dataframe(df,chrom,pos,name,value):
     name_col= {chrom:"#CHROM",pos:"POS",value:"P",name:"ID"}
     df = df.rename(columns=name_col)
     return df
-
 
 
 def run_parallel(tasks, max_workers=4, mode="cmd", capture_output=True):
@@ -429,10 +490,68 @@ def run_parallel(tasks, max_workers=4, mode="cmd", capture_output=True):
     else:
         print("All jobs done！")
 
-    return results
-    return results
-    
+    return results    
 
+
+def _run_cmd(cmd, capture_output):
+    if capture_output:
+        res = subprocess.run(cmd, shell=True,
+                             stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE,
+                             universal_newlines=True)  # 等价于 text=True
+    else:
+        res = subprocess.run(cmd, shell=True)
+    return res.returncode, res.stdout if capture_output else "", res.stderr if capture_output else ""
+
+def _run_func(func, *args, **kwargs):
+    try:
+        result = func(*args, **kwargs)
+        return 0, result, ""
+    except Exception as e:
+        return 1, None, str(e)
+
+def run_parallel2(tasks, max_workers=4, mode="cmd", capture_output=True):
+    """
+    并行运行命令或函数
+    :param tasks: 
+        - 如果 mode="cmd"，tasks 是命令字符串列表
+        - 如果 mode="func"，tasks 是 (func, args, kwargs) 的列表
+    :param max_workers: 最大并行数
+    :param mode: "cmd" 或 "func"
+    :param capture_output: 对命令是否捕获输出 (仅对 mode="cmd" 有效)
+    :return: {task: (exit_code/result, stdout, stderr/exception)}
+    """
+    results = {}
+
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        if mode == "cmd":
+            futures = {executor.submit(_run_cmd, cmd, capture_output): cmd for cmd in tasks}
+        elif mode == "func":
+            futures = {
+                executor.submit(_run_func, func, *args, **kwargs): f"{func.__name__}{args}{kwargs}"
+                for func, args, kwargs in tasks
+            }
+        else:
+            raise ValueError("mode must be 'cmd' or 'func'")
+
+        for future in as_completed(futures):
+            task = futures[future]
+            try:
+                results[task] = future.result()
+            except Exception as e:
+                results[task] = (-1, None, str(e))
+
+    failed = [task for task, (code, _, err) in results.items() if code != 0]
+    if failed:
+        print("unfinished jobs: ")
+        for task in failed:
+            code, _, err = results[task]
+            print(f"  - task, exit_code={code}, error={err}")
+        sys.exit(1)  
+    else:
+        print("All jobs done！")
+
+    return results
 
 
 if __name__ == '__main__':

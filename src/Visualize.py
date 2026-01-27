@@ -6,6 +6,7 @@ import itertools
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import statsmodels.api as sm
 from scipy.stats import ttest_ind
 import matplotlib.pyplot as plt
 
@@ -50,7 +51,7 @@ def get_args(args):
     stat_group.add_argument("--cor",help="Draw correlation heatmap (depending on --plot)",action="store_true",default=False)
     stat_group.add_argument("--pca",help="Perform and plot PCA (principal component analysis)",action="store_true",default=False)
     stat_group.add_argument("--box",help="Draw boxplot for data distribution using --xData and --yData",action="store_true",default=False)
-    stat_group.add_argument("--dot",help="Draw scatter plot using --xData and --yData columns",action="store_true",default=False)
+    stat_group.add_argument("--lm_dot",help="Draw scatter plot using --xData and --yData columns",action="store_true",default=False)
     stat_group.add_argument("--exc",help="The non-numeric columns that needs to be excluded when run  --pca or --cor",nargs="*",default=None)
     stat_group.add_argument("--group_col",help="Groups col name for --pca or --dot",type=str,default=None)
     stat_group.add_argument("--group_color",help="Color  for groups in --box, --pca or  --dot",type=str,default=None)
@@ -92,6 +93,8 @@ def main(args=None):
 
         if args.group_color:
             colors = Common.read_file(args.group_color,mode="dict",vals=[1],keys=[0])
+        else:
+            colors = None
 
         if args.box:
             plot_boxplot_ttest(df,x=args.xData,y=args.yData,out=f"{args.out}.boxplot.{args.ftype}",
@@ -99,6 +102,44 @@ def main(args=None):
                                figsize=figsize,dpi=args.dpi,xlab=args.xlab, ylab=args.ylab,colors=colors)
         if args.cor:
             plot_cor(args.df,f"{args.out}.cor_{args.plot}.{args.ftype}",f"{args.out}.cor_matrix.tsv",cor_data=args.plot,excluded=args.exc,figsize=figsize,dpi=args.dpi)
+
+        if args.lm_dot:
+            plot_lm_dot(df,x=args.xData,y=args.yData,out=f"{args.out}.cor_{args.plot}.{args.ftype}",
+                       xlab=args.xlab, ylab=args.ylab,figsize=figsize,dpi=args.dpi)
+
+
+
+def plot_lm_dot(df,x,y,out,xlab,ylab,figsize=(8,5),dpi=300):
+    #print(df)
+    x=df[x].tolist()
+    y=df[y].tolist()
+             
+    xx = sm.add_constant(x)
+    model = sm.OLS(y,xx).fit()
+
+    r_squared = model.rsquared 
+    p_value = model.pvalues[1] 
+
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.scatter(x, y)
+    ax.set_xlabel(xlab, fontsize=10)
+    ax.set_ylabel(ylab, fontsize=10)
+    ax.tick_params(axis='both', which='major', labelsize=10)
+
+    # 画拟合线
+    ax.plot(x, model.fittedvalues, color='red')
+
+    # 在图上标注 R² 和 P
+    ax.text(
+        0.05, 0.95,
+        f"R² = {r_squared:.3f}\nP = {p_value:.3e}",
+        transform=ax.transAxes,
+        fontsize=12,
+        verticalalignment='top',
+        bbox=dict(boxstyle="round", facecolor="white", alpha=0.7)
+    )
+    plt.savefig(out, dpi=dpi, bbox_inches='tight')
+
 
 
 def plot_cor(infile,outfig,outtsv,cor_data="Col",excluded=None,figsize=(10,10),dpi=300):
@@ -124,20 +165,6 @@ def plot_cor(infile,outfig,outtsv,cor_data="Col",excluded=None,figsize=(10,10),d
     plt.savefig(outfig, dpi=dpi, bbox_inches="tight")
     correlation_matrix.to_csv(outtsv,sep="\t")
 
-
-
-def compute_pca(data):
-    if data.shape[1] < 2:  # 只有一个性状时 PC1 贡献率为 100%
-        #pc1_df = pd.DataFrame(data.iloc[:, 0], columns=["PC1"])
-        pc1_df = pd.DataFrame(data.iloc[:, 0].values, index=data.index, columns=["PC1"])
-        return 1.0, pc1_df
-    #pca = PCA(n_components=min(data.shape[1], data.shape[0]))  # 维度不能超过样本数
-    pca = PCA(n_components=1)  # 只计算第一个主成分
-    pc1_scores = pca.fit_transform(data)  # 计算 PC1 得分
-    explained_var = pca.explained_variance_ratio_[0]  # PC1 贡献率
-    pc1_df = pd.DataFrame(pc1_scores, index=data.index, columns=["PC1"])
-
-    return explained_var,pc1_df
 
 
 
@@ -275,6 +302,11 @@ def manhatan_fig_v1(df, cut, ylab, out, sub=None,local=None,hightlight=None,colo
 
     ticks = ax.get_yticks()
     ax.set_yticklabels([f"{abs(tick):g}" for tick in ticks])
+    #ax.set_yticks(ticks)  # 第一步：设置位置
+    #if labels is None:
+        #labels = [f"{abs(tick):g}" for tick in ticks]
+        #ax.set_yticklabels(labels)  # 第二步：设置标签
+
 
     plt.tight_layout()
     if ftype == "png":
