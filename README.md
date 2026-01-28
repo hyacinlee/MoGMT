@@ -182,3 +182,14 @@ Pos53	../../03.Gwas_singleTriat/Traits.Pos53.500k.sign.WeightGenes.xls
 MoGMT.py Candidate  -i Coloc.txt --co_local  -o Trait27.express --fit_exp "G128!=None"
 
 ```
+
+
+---
+### License
+
+This project is licensed under the MIT License.
+See the [LICENSE](LICENSE) file for details.
+
+---
+### Citation
+
