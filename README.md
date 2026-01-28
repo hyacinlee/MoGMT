@@ -3,105 +3,137 @@ Multi-omics genetic mapping tools
 
 ## Install
  This toolkit is entirely developed based on python. 
- Please ensure that your python >= 3.5 and install the following packages:
+ Please ensure that your python >= 3.6 and pip3 in your env:
 
 
 Then :
 ```
-pip3 install package.lst 
+pip3 install -r requirements.txt
 
+cd ${your_path}
+git clone https://github.com/hyacinlee/MoGMT
 
-cd your_path
-git clone xxxxxx.git
+cd ./MoGMT
+pip3 install -r requirements.txt
 
-export PATH="your_path/MoGMT/:$PATH"
-export PYTHONPATH="your_path/MoGMT/src:$PYTHONPATH"
+export PATH="${your_path}/MoGMT/:$PATH"
+export PYTHONPATH="${your_path}/MoGMT/src:$PYTHONPATH"
 
 MoGMT.py -h
+
 ```
 
 
 ## Module Introduction
-* **Vcftools**             :   The module for processing vcf file , including format conversion, adding or simplifying information, renaming chromosomes or sample names, etc.
+* **Vcftools**          :   The module for processing vcf file , including format conversion, adding or simplifying information, renaming chromosomes or sample names, etc.
 * **Phenotype**         :   The module for processing phenotypic data, including clustering, dimensionality reduction, etc. 
-* **Emmax**               :   The module for conducting association analysis using Emmax.
-* **Evidence**           :   The module for evidence genes use multi-omics results.
-* **Visualize**            :   The module for output Manhantun or other figures.
-* **Colocalization**    : The module for perform Co-localization with mutiple traits.
-* **BulkSegAna**       :   The module for perform Bulked Segregant Analysis use vcf files.
-* **TransAsso**          :   The module for perform Association analysis between gene expression matrix and phenotype in population.
+* **GWAS**              :   The module for conducting association analysis using Emmax.
+* **Evidence**          :   The module for evidence genes use multi-omics results.
+* **Visualize**         :   The module for output Manhantun or other figures.
+* **GeneEffect**        :   The module for post-GWAS gene-level effect rank.
+* **Candidate**         :   The module for select candidate genes using muti-methods.
+* **BulkSegAna**        :   The module for perform Bulked Segregant Analysis use vcf files.
+* **TransAsso**         :   The module for perform Association analysis between gene expression matrix and phenotype in population.
+
+
+## Vcftools
+```
+# rename vcf chromosome names 
+MoGMT.py Vcftools -v w220RNA.PASS.filter.strict.imputed.vcf --rename_chr --chr TGY.rename -o TGY.final.vcf
+```
 
 
 ##  Phenotype 
 
-#### 基础操作
+#### Basic matrix operations
 ```
-提取子集(按行或者列)：
-MoGMT.py Phenotype -p merge.FPKM.gene.xls --subLines Candidate.co_loc10.ids --out Candidate.co_loc10.FPKM
+Extract subset (by row or column):
 ------------------------------------------------------------
+MoGMT.py Phenotype -p example.raw.phe --subLines Candidate.triats.ids --out Candidate.triats
+MoGMT.py Phenotype -p example.raw.phe --subColumns Candidate.sample.ids --out Candidate.sample
 
-按行统计：
-MoGMT.py Phenotype -p Candidate.co_loc10.FPKM.sub_set.tsv  --stat --out Candidate.co_loc10
+
+Run statistics by row:
 ------------------------------------------------------------
+MoGMT.py Phenotype -p example.raw.phe --stat -o example
 
-合并combine_files 到 base file
-MoGMT.py Phenotype --combine Sample --combine_method Base -p Group1.sub_set.tsv --combine_files Sample.296.SubGroup.txt --out Test.group
+
+Combine "combine_files" into the base file (-p):
 ------------------------------------------------------------
+MoGMT.py Phenotype --combine Sample --combine_method Base -p example.raw.phe --combine_files new.traits1.txt new.traits2.txt  --out Combine
 
-按列的group统计均值：
-MoGMT.py Phenotype -p gene.expression.xls --mean group.txt --out  
 
+Run imputation only
+------------------------------------------------------------
+MoGMT.py Phenotype -p example.mask5.masked.tsv -i knn --n_neighbors 10 -o example
+MoGMT.py Phenotype -p example.mask5.masked.tsv -i iterative_bayes  --max_iter -o example
+MoGMT.py Phenotype -p example.mask5.masked.tsv -i iterative_bayes  -o example
+
+
+Column-wise group mean calculation (typically used for handling multiple replicates):
+------------------------------------------------------------------------------------------------------------------------
+MoGMT.py Phenotype -p gene.expression.phe --mean group.txt --out  gene.expression 
 head group.txt 
-S21_1	FudingDahao
-S21_2	FudingDahao
-S49_1	Tieluohan
-S49_2	Tieluohan
+colum_name1 group1
+colum_name2 group1
+colum_name3 group2
+colum_name4 group2
 ...
 
-------------------------------------------------------------
-
-按列的group进行t-test：
-MoGMT.py Phenotype -p gene.expression.grouped.tsv --group_ttest group.txt --out gene.expression
-
-head group.txt
-FudingDahao	H
-Tieluohan	H
-Aijiaowulong L
-Echa1	L
+# t-test
+MoGMT.py Phenotype -p gene.expression.grouped.tsv --group_ttest t-group.txt --out gene.expression
+head t-group.txt
+group1  Hight
+group2  Hight
+group3  Low
+group4  Low
 ...
+
+```
+
+
+#### Clustering
+```
+Global clustering with 500 iterations
 ------------------------------------------------------------
+MoGMT.py Phenotype -p ../example.raw.phe -g -c 0.7 -z 0.8 -o meta.know.C70.Z80 -b 500
 
+
+Use the specified trait for local clustering (search all traits for those similar to `-l`)
+------------------------------------------------------------
+MoGMT.py Phenotype -p ../example.raw.phe -l local.txt -c 0.7 -z 0.8 -o meta.know.C70.Z80.local -b 20
+head local.txt 
+YL_cmp1651
+YL_cmp1307
+YL_cmp624
+YL_cmp1304
+YL_cmp622
+...
 
 ```
 
-
-#### 聚类
-```
-
-
-```
 
 ---
 ## GWAS 
 ```
-# 基础的 GWAS
+# Basic GWAS
 MoGMT.py Emmax -v ./snp.dep5.mis90.maf5.simply.vcf -c PCA.cov -p phe.txt
 
-# 如果SNP太多(>2000w)，使用并行提高效率
+# If there are too many SNPs (> 2000,000), use parallel processing to improve efficiency
 MoGMT.py Emmax -v ./snp.dep5.mis90.maf5.simply.vcf -c PCA.cov -p phe.txt --split chrom.lst
 
-# 完成后，换阈值及重新筛选
+# After completion, adjust the threshold and re-filter the results
 rm -rf GWAS.outputs.done  GWAS.manhantun.done
 MoGMT.py Emmax -v ./snp.dep5.mis90.maf5.simply.vcf -c PCA.cov -p phe.txt --split chrom.lst -s 0.000001 
 
-# 示例文件（顺序并不重要）
+# Sample File (The order is not important)
 head PCA.cov 
-Sample	PC1	PC2	PC3
-10	0.067394	0.0363772	0.023049
-104	0.0326593	0.0115734	-0.0513225
-105	0.0652511	0.061142	0.0384592
-108	0.0467105	0.0194756	-0.017885
-110	0.0614426	0.0341291	0.0129854
+Sample  PC1 PC2 PC3
+10  0.067394    0.0363772   0.023049
+104 0.0326593   0.0115734   -0.0513225
+105 0.0652511   0.061142    0.0384592
+108 0.0467105   0.0194756   -0.017885
+110 0.0614426   0.0341291   0.0129854
 
 head chrom.lst
 lg1
@@ -140,10 +172,10 @@ MoGMT.py Visualize -m manha --site_value ../03.Gwas_singleTriat/Traits.Pos2.emma
 
 
 cat heightlight file:
-lg12_16125300	PPOX2	red
-lg12_35022415	Cyp450	red
-lg13_193074629	LAP2	red
-lg3_83862148	AAP3	red
+lg12_16125300   PPOX2   red
+lg12_35022415   Cyp450  red
+lg13_193074629  LAP2    red
+lg3_83862148    AAP3    red
 ```
 
 
@@ -152,11 +184,10 @@ lg3_83862148	AAP3	red
 MoGMT.py Visualize -m stat --df Test.group.combine.tsv --box -o Test.group.combine --xData Group --yData Pos2 --ttest CSA1,CSS1 CSA1,CSS2 CSA2,CSS2 CSA2,CSS1 --figsize 8 8 --group_color Group.color
 
 cat Group.color 
-CSS1	#3274a1
-CSS2	#e1812c
-CSA1	#FB5607
-CSA2	#8338EC
-
+CSS1    #3274a1
+CSS2    #e1812c
+CSA1    #FB5607
+CSA2    #8338EC
 
 ```
 
@@ -173,14 +204,45 @@ MoGMT.py Visualize -m stat --df Test.group.combine.tsv --cor -o Test.group.combi
 ```
 
 cat Coloc.txt
-Pos2	../../03.Gwas_singleTriat/Traits.Pos2.500k.sign.WeightGenes.xls
-Pos5	../../03.Gwas_singleTriat/Traits.Pos5.500k.sign.WeightGenes.xls
-Pos15	../../03.Gwas_singleTriat/Traits.Pos15.500k.sign.WeightGenes.xls
-Pos35	../../03.Gwas_singleTriat/Traits.Pos35.500k.sign.WeightGenes.xls
-Pos53	../../03.Gwas_singleTriat/Traits.Pos53.500k.sign.WeightGenes.xls
+Pos2    ../../03.Gwas_singleTriat/Traits.Pos2.500k.sign.WeightGenes.xls
+Pos5    ../../03.Gwas_singleTriat/Traits.Pos5.500k.sign.WeightGenes.xls
+Pos15   ../../03.Gwas_singleTriat/Traits.Pos15.500k.sign.WeightGenes.xls
+Pos35   ../../03.Gwas_singleTriat/Traits.Pos35.500k.sign.WeightGenes.xls
+Pos53   ../../03.Gwas_singleTriat/Traits.Pos53.500k.sign.WeightGenes.xls
 
 MoGMT.py Candidate  -i Coloc.txt --co_local  -o Trait27.express --fit_exp "G128!=None"
 
+```
+
+
+
+---
+## BSA
+```
+# BSA in single SNP site:
+MoGMT.py BulkSegAna -v snp.filter.vcf -s1 Low -s2 High -t ed -s top1 top5 
+
+# BSA in a 50kb-step and 500kb-windows sliding windows:
+MoGMT.py BulkSegAna -v snp.filter.vcf -s1 Low -s2 High -t ed -s top1  -step 50  -wind 500 -minSite 5  -minDepth 10
+
+
+```
+
+
+
+---
+## Trans Associate
+```
+# Although the covariance file (-c) is not mandatory, we strongly recommend using it.
+
+# Only Run two traits:
+MoGMT.py TransAsso -e DASZ.220.exp.filter1.sub_set.tsv -p ../GWAS.phe  -t Group1 Group2   -c ./PCA.matrix
+
+# Run all traits in .phe file with parallel threads:
+MoGMT.py TransAsso -e DASZ.220.exp.filter1.sub_set.tsv -p ../GWAS.phe --threads 24  -c ./PCA.matrix
+
+# Fig out candidate genes (Only the gene ID in the first column is needed)
+MoGMT.py TransAsso -e DASZ.220.exp.filter1.sub_set.tsv -p ../GWAS.phe  -t Group3 -c ./PCA.matrix --figGenes TransAsso.Group3.signal.txt
 ```
 
 
