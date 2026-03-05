@@ -22,7 +22,8 @@ SUB_COMMANDS = {
     "BulkSegAna":"BulkSegAna",
     "TransAsso": "TransAsso",
     "Candidate":"Candidate",
-    "GeneEffect":"GeneEffect"
+    "GeneEffect":"GeneEffect",
+    "Haplotype":"Haplotype"
 }
 
 def main():
@@ -48,9 +49,11 @@ def main():
 
         #------------------------------  Additional module  ------------------------------#
 
-        GeneEffect  :    The module for Post-GWAS to identify gene-level effect
+        GeneEffect  :    The module for Post-GWAS to identify gene-level effect.
 
         Candidate   :    The module for select candidate genes using muti-methods.
+
+        Haplotype    :   The module for perform Haplotype analysis based on single gene.
 
         TransAsso    :   The module for perform Association analysis between gene expression matrix and phenotype in population.
         

@@ -21,7 +21,7 @@ RunCmd :
 '''
     )
     parser.add_argument('-v','--vcf',help='vcf file',required=True,type=str)
-    parser.add_argument('-t','--type',help='Use Euclidean-distance or SNP-index',type=str,choices=["ed","index"],required=True)
+    parser.add_argument('-t','--type',help='Use Euclidean-distance or SNP-index',type=str,default="ed",choices=["ed","index"],required=True)
     parser.add_argument('-o','--out',help='pre-name of out files',type=str,default="BSA")
     parser.add_argument('-s','--sign',help="Significance cut line: B = 1/n || F = 0.05/n || top1 = top 0.01 || top5 = top 0.05 || a self-defined float",nargs="+",default=["top1"])
     parser.add_argument('-step',help='Step-size of sliding window, kb',type=int,default=None)
@@ -50,12 +50,13 @@ def main_BSA(args):
     if not os.path.exists(site_out):
         out1=open(site_out,"w")
         if args.type == "ed":
-            out1.write("Chrom\tPos\tID\tRef\tAlt\tValue\ted4\tBulk1\tBulk2\n")
+            out1.write("Chrom\tPos\tID\tRef\tAlt\ted2\ted4\tBulk1\tBulk2\n")
         elif args.type == "index":
-            out1.write("Chrom\tPos\tID\tRef\tAlt\tValue\tIndex1\tIndex2\tBulk1\tBulk2\n")
+            out1.write("Chrom\tPos\tID\tRef\tAlt\tGT_p1\tGT_p2\tabs_delta_index\tOrder\tdelta_index\tIndex1\tIndex2\tBulk1\tBulk2\n")
         name_index = {}
 
         print("# Start cal site BSA.... ")
+        log = open(f"{args.out}.log","w")
         for line in open(args.vcf):
             if line.startswith("##"):
                 continue
@@ -67,27 +68,58 @@ def main_BSA(args):
                 if args.type == "ed":
                     result = calED(info,name_index[args.s1],name_index[args.s2],args.minDepth)
                 elif  args.type == "index":
-                    result = calIndex(info,name_index[args.s1],name_index[args.s2],args.minDepth)
-                    
-                if len(result) == 0 :
+                    result = calIndex(info,name_index[args.s1],name_index[args.s2],name_index[args.p1],name_index[args.p2],args.minDepth)
+    
+                if isinstance(result, str):
+                    log.write(result+"\n")
                     continue
-                out1.write("\t".join(map(str,result)) + "\n") 
+                else:
+                    out1.write("\t".join(map(str,result)) + "\n") 
+                #if result == None or len(result) == 0 :
+                #    continue
+                #out1.write("\t".join(map(str,result)) + "\n") 
 
     else:
         print("# result file {site_out} exist, remove it if you want re-run site-BSA")
 
     Site = pd.read_table(f"{args.out}.site.txt", sep="\t")
-    #df_plot = df.rename(columns={"ed2":"Value"}) 
-    cutoff=Common.judge_significant(args.sign,Site,"Value")
-    Visualize.manhatan_fig_v1(Site,cutoff,"ED2",f"{args.out}.site")
-    output_candidate(Site,"Value",f"{args.out}.site",args.sign,cutoff)
+        
+    if args.type == "ed":
+        df_plot = Site.rename(columns={"ed2":"Value"})
+        cutoff=Common.judge_significant(args.sign,Site,"ed2")
 
+        Visualize.manhatan_fig_v1(df_plot,cutoff,"ED2",f"{args.out}.site")
+        output_candidate(Site,"ED2",f"{args.out}.site",args.sign,cutoff)
+
+        #winds
+        if args.wind:
+            Wind=sliding_window_fit(Site,f"{args.out}.wind{args.wind}k.txt",args.step*1000,args.wind*1000,args.minSite,method=args.fit,chrom_col='Chrom', pos_col='Pos', value_col='Value')
+
+            cutoff1=Common.judge_significant(args.sign,Wind,"Value")
+            draw_combined(Site,Wind.fillna(0),cutoff1,f"{args.out}.wind{args.wind}k")
+            candidate=output_candidate(Wind,"Value",f"{args.out}.wind{args.wind}k",args.sign,cutoff1,mergeOut=True)
+
+
+    elif args.type == "index":
+        df_plot = Site.rename(columns={"abs_delta_index":"Value"})
+        cutoff=Common.judge_significant(args.sign,Site,"abs_delta_index")
+
+        Visualize.manhatan_fig_v1(df_plot,cutoff,"delta-index",f"{args.out}.site")
+        output_candidate(Site,"abs_delta_index",f"{args.out}.site",args.sign,cutoff)
+
+        if args.wind:
+            Wind=sliding_window_fit(Site,f"{args.out}.wind{args.wind}k.txt",args.step*1000,args.wind*1000,args.minSite,method=args.fit,chrom_col='Chrom', pos_col='Pos', value_col='delta_index')
+
+            Wind["Value_abs"] = Wind["Value"].abs()
+            cutoff1=Common.judge_significant(args.sign,Wind,"Value_abs")
+            cutoff2=cutoff1.copy()
+            for s in cutoff1:
+                cutoff2.append(-1*s)
+
+            df_plot2 = Site.rename(columns={"delta_index":"Value"})
+            draw_combined(df_plot2,Wind.fillna(0),cutoff2,f"{args.out}.wind{args.wind}k")
+            candidate=output_candidate(Wind,"Value_abs",f"{args.out}.wind{args.wind}k",args.sign,cutoff1,mergeOut=True)
    
-    if args.wind:
-        Wind=sliding_window_fit(Site,f"{args.out}.wind{args.wind}k.txt",args.step*1000,args.wind*1000,args.minSite,method=args.fit,chrom_col='Chrom', pos_col='Pos', value_col='Value')   
-        cutoff1=Common.judge_significant(args.sign,Wind,"Value")
-        draw_combined(Site,Wind.fillna(0),cutoff1,f"{args.out}.wind{args.wind}k")
-        candidate=output_candidate(Wind,"Value",f"{args.out}.wind{args.wind}k",args.sign,cutoff1,mergeOut=True)
 
 
 def output_candidate(df,colum,out,sign,cuts,mergeOut=False):
@@ -102,7 +134,7 @@ def output_candidate(df,colum,out,sign,cuts,mergeOut=False):
 
 def draw_combined(Site,Wind,cuths,outfile,posC="Value",lineC="Value"):
     xmax=Site['Pos'].max()
-    ymax=Site[posC].max()
+    ymax=int(Site[posC].max())+1
 
     bins=list(Wind['Chrom'].unique())
     fig,axes = plt.subplots(len(bins),1,sharex=True,figsize=(2*len(bins),len(bins)))
@@ -166,8 +198,6 @@ def sliding_window_fit(df,out,step_size,wind_size,minSite,method="mean",chrom_co
             if snp_number >= minSite:
                 vaild_winds += 1 
                 fitted_value = fit_values(positions[snp_indices],values[snp_indices],method)
-                #window_positions = positions[snp_indices]
-                #window_values = values[snp_indices]
                     
             out.write(f"{chrom}\t{window_start}\t{window_end}\t{fitted_value}\t{snp_number}\n")
             #print(chrom,window_start,window_end,fitted_value,snp_number)
@@ -214,7 +244,7 @@ def calED(info,s1,s2,minDepth):
     b1,b2 = map(int,ds2.split(","))
     total =  a1 + a2 + b1 + b2
     if a1+a2 < minDepth or b1+b2 < minDepth:
-        return []
+        return f"Filter\t{info[0]}:{info[1]}\t#The Depth is less than the given threshold."
     else:
         ed2 = (float(a1)/(a1+a2)-float(b1)/(b1+b2))**2 + (float(a2)/(a1+a2)-float(b2)/(b1+b2))**2
         ed4 = ed2**2
@@ -222,20 +252,100 @@ def calED(info,s1,s2,minDepth):
         return res
 
 
-def calIndex(info,s1,s2,minDepth):
-    ds1 = info[s1].split(":")[1]
-    ds2 = info[s2].split(":")[1]
+def calIndex(info, s1, s2, p1, p2, minDepth):
+    """
+    Calculate SNP-index and ΔSNP-index for BSA.
+    
+    Parameters:
+        info: list of sample strings from VCF (GT:AD:DP:GQ:PL format)
+        s1, s2: indices of bulk1 and bulk2
+        p1, p2: indices of parent1 and parent2
+        minDepth: minimum depth threshold for bulks
+    
+    Returns:
+        (snp_index_1, snp_index_2, delta_index)
+        Return None if any condition not satisfied.
+    """
 
-    a1,a2 = map(int,ds1.split(","))
-    b1,b2 = map(int,ds2.split(","))
-    total =  a1 + a2 + b1 + b2
-    if a1+a2 < minDepth or b1+b2 < minDepth:
-        return []
+    # Parse parents
+    p1_data = parse_sample(info[p1])
+    p2_data = parse_sample(info[p2])
+    
+    if p1_data is None or p2_data is None:
+        return f"Filter\t{info[0]}:{info[1]}\t#Invalid GT or AD information."
+    
+    gt_p1, ref_p1, alt_p1, dp_p1 = p1_data
+    gt_p2, ref_p2, alt_p2, dp_p2 = p2_data
+
+    # Normalize genotype separator
+    gt_p1 = gt_p1.replace('|', '/')
+    gt_p2 = gt_p2.replace('|', '/')
+
+    # Parents must be homozygous
+    if gt_p1 not in ("0/0", "1/1"):
+        return f"Filter\t{info[0]}:{info[1]}\t#The genotype of parent 1 is not homozygous."
+    if gt_p2 not in ("0/0", "1/1"):
+        return f"Filter\t{info[0]}:{info[1]}\t#The genotype of parent 2 is not homozygous."
+
+    # Parents must be different
+    if gt_p1 == gt_p2:
+        return f"Filter\t{info[0]}:{info[1]}\t#The genotypes of parent 1 and parent 2 are the same."
+
+    # Parse bulks
+    s1_data = parse_sample(info[s1])
+    s2_data = parse_sample(info[s2])
+
+    if s1_data is None or s2_data is None:
+        return f"Filter\t{info[0]}:{info[1]}\t#Invalid GT or AD information."
+
+    gt_s1, ref_s1, alt_s1, dp_s1 = s1_data
+    gt_s2, ref_s2, alt_s2, dp_s2 = s2_data
+
+    # Bulk depth filter
+    if dp_s1 <= minDepth or dp_s2 <= minDepth:
+        return f"Filter\t{info[0]}:{info[1]}\t#The Depth is less than the given threshold."
+
+    # Determine which allele to track (parent1 allele)
+    if gt_p1 == "0/0":
+        snp_index_1 = ref_s1 / dp_s1
+        snp_index_2 = ref_s2 / dp_s2
     else:
-        ed2 = (float(a1)/(a1+a2)-float(b1)/(b1+b2))**2 + (float(a2)/(a1+a2)-float(b2)/(b1+b2))**2
-        ed4 = ed2**2
-        res= [info[0],info[1],info[2],info[3],info[4],ed2,ed4,ds1,ds2]
-        return res
+        snp_index_1 = alt_s1 / dp_s1
+        snp_index_2 = alt_s2 / dp_s2
+
+    delta_index = snp_index_1 - snp_index_2
+
+    #out1.write("Chrom\tPos\tID\tRef\tAlt\tValue\tIndex1\tIndex2\tBulk1\tBulk2\n")
+    order = "+" if delta_index > 0 else "-"
+    res= [info[0],info[1],info[2],info[3],info[4],gt_p1,gt_p2,abs(delta_index),order,delta_index,snp_index_1,snp_index_2,f"{ref_s1};{alt_s1}",f"{ref_s2};{alt_s2}"]
+    return res
+
+
+def parse_sample(sample_str):
+    fields = sample_str.split(':')
+    if len(fields) < 2:
+        return None
+    
+    gt = fields[0]
+    ad = fields[1]
+    # Disallow missing values
+    if '.' in gt or '.' in ad:
+        return None
+    
+    
+    # Parse AD (must be biallelic: ref,alt)
+    ad_parts = ad.split(',')
+    if len(ad_parts) != 2:
+        return None
+    
+    try:
+        ref = int(ad_parts[0])
+        alt = int(ad_parts[1])
+        dp  = ref + alt
+    except:
+        return None
+    
+    return gt, ref, alt, dp
 
 
 def millions(x,pos):

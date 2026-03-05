@@ -19,10 +19,10 @@ def get_args(args):
                                     formatter_class=Common.CustomFormatter
         )
     parser.add_argument("-i", "--input",required=True, help="Path of the Gwas or Other site-value Result of Candidata SNPs, such as *significant.tsv ",type=str)
-    parser.add_argument("-p", "--phe",required=True, help="Path of the input phenotype file",type=str)
     parser.add_argument("-v", "--vcf",required=True, help='vcf file in bgzip format and has bcftools-csi index',type=str)
     parser.add_argument("-a", "--annovar",required=True,help='Prefix of snp Annovar result file, *variant_function and *exonic_variant_function',type=str)
     parser.add_argument("-b","--bed",required=True,help="Table split bed file of gene or mRNA with at least 5 column: Chrom start end strand gene_name",type=str)
+    parser.add_argument("-p", "--phe", help="Path of the input phenotype file",type=str)
     parser.add_argument("-f", "--function",help='Function Annotation of Genes. Support multi-column information, but the first column must be the gene name and include the table header',type=str)
     parser.add_argument("-e", "--eQTL",help='Known eQTLs results file in SNPs -- Gens formats',type=str)
     parser.add_argument("-o", "--out",help="Prefix of outfiles",type=str,default="Evi")
@@ -42,7 +42,7 @@ def get_args(args):
     parsed_args = parser.parse_args(args)
 
     Common.check_path_exists(parsed_args.input)
-    Common.check_path_exists(parsed_args.phe)
+    #Common.check_path_exists(parsed_args.phe) # Adding the support for phe lacking. 20260302
     Common.check_path_exists(parsed_args.vcf)
     Common.check_path_exists(parsed_args.bed)
     Common.check_path_exists(f"{parsed_args.annovar}.variant_function")
@@ -97,7 +97,10 @@ def main(args=None):
 
     #print(snp_genes)
     #logger.info("Reading Phenotype data from %s" %(args.phe)) 
-    Phe = Common.read_file(args.phe,mode="dict",keys=[0],vals=[2])
+    if args.phe:
+        Phe = Common.read_file(args.phe,mode="dict",keys=[0],vals=[2])
+    else:
+        Phe = None # Adding the support for phe lacking. 20260302
     #Phe = readTableDict(args.phe,0,2)
 
     (gene_snp_count,gene_snp_count_cor)=out_sites_genes(out,snp_bases,snp_genes,snp_GTs,Phe,snp_df)
@@ -164,7 +167,10 @@ def out_sites_genes(out,snp_bases,snp_genes,snp_GTs,Phe,snp_df):
             sID  = rs[0]
             base = snp_bases[sID]
             #print(snp_GTs[sID],Phe)
-            (pp1,p1,r)=stTest(snp_GTs[sID],Phe)     # student t-test SNP vs Phe
+            if Phe:
+                (pp1,p1,r)=stTest(snp_GTs[sID],Phe)     # student t-test SNP vs Phe
+            else:
+                (pp1,p1,r)=(0,0,1)    # Adding the support for phe lacking. 20260302
 
             if "R2" in snp_df.columns:
                 r2 = snp_df.loc[snp_df['ID'] == sID, 'R2'].values[0].round(4)
@@ -493,11 +499,8 @@ def significance(df):
 
     snp_bases={}
     snp_pos2id={}
-    #signDf=df[df['P'] < cut ]
+
     signDf=df
-    # out signDf  
-    #logger.info(f"{len(signDf)} significance SNP were founded !")
-    #signDf.to_csv("%s.sign.sites" %(out),index=False,sep="\t")
  
     for index,row in signDf.iterrows():
         c=str(row['CHROM'])
@@ -543,8 +546,14 @@ def read_annovar(vf,evf,snp_pos2id):
             continue
 
         tags = "%s#%s" %(ls[2],ls[3])
+        
+        if ls[6] == "-": #  del, shift 1bp
+            tags = f"{ls[2]}#{int(ls[3])-1}" 
+        #if len(ls[4]) < len(ls[3]):  #  del, shift 1bp
+        #    tags = f"{ls[2]}#{int(ls[3])-1}"
         # gene,loci    
         if tags not in snp_pos2id:
+            #print(tags)
             continue
 
         #print(tags,l)
@@ -571,7 +580,8 @@ def read_annovar(vf,evf,snp_pos2id):
                 print(f"# UNKNOW gene information in {evf}, please check it.")
                 exit(1)
             #print (le)
-            if "nonsynonymous"  in les[1]:
+            #if "nonsynonymous"  or "nonframeshift" in les[1]:  # indels trait as Syn
+            if "nonsynonymous" in les[1]:
                 snp_genes.append([snp_pos2id[tags],gene,"NoSyn",0])
             else:
                 snp_genes.append([snp_pos2id[tags],gene,"Syn",0])

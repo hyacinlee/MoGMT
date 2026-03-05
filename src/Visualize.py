@@ -33,7 +33,7 @@ def get_args(args):
     manha_group.add_argument("--value",help="Value column",type=str,default="Value")
     manha_group.add_argument("--name",help="SNP name column",type=str,default="ID")  
     manha_group.add_argument("--sign",help="Significance cut line: B = 1/n || F = 0.05/n || top1 = top 0.01 || top5 = top 0.05  || a self-defined float",nargs="+",default=["B"])
-    manha_group.add_argument("--log",help="change to log10 value",action="store_true",default=True)
+    manha_group.add_argument("--log",help="change to log10 value",action="store_true",default=False)
     manha_group.add_argument("--sub",help="Draw only one chr",type=str,default=None)
     manha_group.add_argument("--local",help="Draw only local region be like chr:start-end",type=str,default=None)
     manha_group.add_argument("--hightlight",help="Hightlight maker ID in files, ids must be same with input",type=str,default=None)
@@ -400,15 +400,22 @@ def manhatan_fig_v0(df, cut, ylab, out, sub=None, hightlight=None,colors=["#3274
 def clean_logs_cut(df,log,sign,name):
     cut = Common.judge_significant(sign,df)  
     
-    yname="-log10(P)"
-    cut = -np.log10(cut)
+    #yname="-log10(P)"
+    #cut = -np.log10(cut)
 
-    if not log:
-        df["P"]=1.0/10**df["P"]
-        yname=name
-        cut = 1/10**float(cut)
-    else:
+    #if not log:
+    #    df["Value"]=1.0/10**df["Value"]
+    #    yname=name
+    #    cut = 1/10**float(cut)
+    #else:
+    #    df['Value'] = -np.log10(df['Value'])
+    if log:
         df['Value'] = -np.log10(df['Value'])
+        cut = -np.log10(cut)
+        yname="-log10(P)"
+    else:
+        yname = name    
+
 
     return df,cut,yname
 
