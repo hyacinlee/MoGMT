@@ -8,7 +8,6 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor,as_completed
 import argparse
 
-
 def get_args(args):
     parser = argparse.ArgumentParser(description="Processing muti-traits GWAS with Emmax form vcf file",
                                     formatter_class=Common.CustomFormatter
@@ -42,6 +41,10 @@ def main(args=None):
 
     traits=process_gwas(args)
 
+    with open("GWAS.traits","w") as f:
+        for t in traits:
+            f.write(f"{t}\n")
+
     snps=Common.read_file("GWAS.snpID","dict",vals=[0,1],keys=[2])
 
     significant=Common.judge_significant(args.sign,snps)
@@ -50,7 +53,7 @@ def main(args=None):
         f.write(f"{significant}\n")
  
     if not Path("GWAS.outputs.done").exists():
-        process_outputs(traits,snps,significant,args.threads,len(samples))
+        process_outputs(traits,significant,args.threads,len(samples))
 
     if not Path("GWAS.manhantun.done").exists():
         process_manhantun(traits,significant)
@@ -70,20 +73,27 @@ def process_manhantun(traits,significant):
 
 
 
-def process_outputs(traits,snps,significant,threads,sampel_number):
+def process_outputs(traits,significant,threads,sampel_number):
     tasks=[]
     for trait in traits:
         #process_trait_output(trait,snps,significant,sampel_number)
-        tasks.append((process_trait_output,(trait,snps,significant,sampel_number),{}))
+        tasks.append((process_trait_output,(trait,significant,sampel_number),{}))
 
-    Common.run_parallel2(tasks, max_workers=threads, mode="func")
+    Common.run_parallel2(tasks, max_workers=4, mode="func")
+    #Common.run_parallel_thread(tasks, max_workers=threads)
 
     Common.run_command(f"touch GWAS.outputs.done")
 
     #return significant
 
 
-def process_trait_output(trait,snps,significant,sampel_number):
+def process_trait_output(trait,significant,sampel_number):
+    print(f"# Output {trait} result...")
+
+    #snps = Common.read_file("GWAS.snpID","dict",vals=[0,1],keys=[2])
+
+    snps=Common.read_file("GWAS.snpID","dict",vals=[0,1],keys=[2])
+
     with open(f"Traits.{trait}.emmax.ps", "r") as f,open(f"Traits.{trait}.emmax.ps.tsv", "w") as f1,open(f"Traits.{trait}.emmax.ps.significant.tsv", "w") as f2:
         f1.write("Chrom\tPos\tID\tValue\tBeta\tSE\tR2\n")
         f2.write("Chrom\tPos\tID\tValue\tBeta\tSE\tR2\n")
@@ -97,7 +107,10 @@ def process_trait_output(trait,snps,significant,sampel_number):
             if float(ls[3]) == 1.0 : 
                 ls[3] = 0.99
             chrom, pos = snps[ls[0]]
-            t = float(ls[1])/float(ls[2])
+            if float(ls[2]) ==0.0:
+                t = 0
+            else:
+                t = float(ls[1])/float(ls[2])
             r2 = t**2/(t**2+sampel_number-2)
             
             f1.write(f"{chrom}\t{pos}\t{ls[0]}\t{ls[3]}\t{ls[1]}\t{ls[2]}\t{r2}\n")
@@ -114,7 +127,7 @@ def process_gwas(args):
     cmds=[]
     chr_list=[]
     for trait in traits:
-        #print(data[trait])
+
         trait_phes,samples = Common.sort_dict_by_list(data[trait],samples)
         Common.write_list_to_file(zip(samples,samples,trait_phes),f"Traits.{trait}.phe",vals=[])
 
@@ -139,9 +152,13 @@ def process_gwas(args):
     if not len(chr_list) == 0:
         cmds=[]
         for trait in traits:
-            result_list =  [f"Traits.{trait}.split/{c}.emmax.ps" for c in chr_list]
-            cmds.append(f"cat {' '.join(result_list)} > Traits.{trait}.emmax.ps")
-        Common.run_parallel(cmds,max_workers=args.threads, mode="cmd", capture_output=True)
+            if not Common.check_path_exists(f"Traits.{trait}.emmax.ps",mode = "w"):
+                result_list =  [f"Traits.{trait}.split/{c}.emmax.ps" for c in chr_list]
+                cmds.append(f"cat {' '.join(result_list)} > Traits.{trait}.emmax.ps")
+            else:
+                print(f"GWAS Result file: Traits.{trait}.emmax.ps exists, skip...." )
+        if len(cmds) > 0 :
+            Common.run_parallel2(cmds,max_workers=args.threads, mode="cmd", capture_output=True)
 
     return traits
 
@@ -175,6 +192,8 @@ def process_vcf_phe(args):
     (phe_data,headinfo)=Common.read_file(args.phe,mode="dict",keys=[0],header=True)
     (phe_data,samples)=Common.sort_dict_by_list(phe_data,vcf_samples)
 
+    Common.write_list_to_file(phe_data,"GWAS.phe",vals=[],header=headinfo)
+
     if Path("GWAS.prepared.done").exists():
         old_samples=Common.read_file("GWAS.sample","list",vals=[0])
         if sorted(old_samples) == sorted(samples):
@@ -186,13 +205,13 @@ def process_vcf_phe(args):
             exit(1)
     else:
         Common.write_list_to_file(phe_data,"GWAS.sample",vals=[0,0])
-        Common.write_list_to_file(phe_data,"GWAS.phe",vals=[],header=headinfo)
+        #Common.write_list_to_file(phe_data,"GWAS.phe",vals=[],header=headinfo)
         Common.run_command(f"{args.plink} --vcf {args.vcf} --allow-extra-chr --make-bed --out GWAS --keep GWAS.sample --maf {args.maf}")
         if args.split:
             chr_list=Common.read_file(args.split,mode="list",vals=[0],header=False)
             Common.run_command(f"mkdir -p  GWAS.split")
             cmds=[f"{args.plink} --bfile GWAS --out GWAS.split/{c} --allow-extra-chr --chr {c} --output-missing-genotype 0 --recode 12 transpose" for c in chr_list]
-            Common.run_parallel(cmds,max_workers=8, mode="cmd", capture_output=True)
+            Common.run_parallel2(cmds,max_workers=8, mode="cmd", capture_output=True)
             #print(result)
 
         Common.run_command(f"{args.plink} --bfile GWAS --out GWAS --allow-extra-chr --output-missing-genotype 0 --recode 12 transpose")

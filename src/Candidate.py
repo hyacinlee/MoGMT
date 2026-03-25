@@ -51,17 +51,17 @@ def main_co_local(args):
         df_list.append(dt)
 
     df = pd.concat(df_list, ignore_index=True)
-    #print(df)
+#    print(df)
 
     df.to_csv(f"{args.out}.co_localization.data.xls",sep="\t",index=False)  
 
-    col_start = df.columns.get_loc("Nearest_SNP_P") + 1
+    col_start = df.columns.get_loc("Nearest_P") + 1
     func_cols = df.columns[col_start:]
 
     gene_info = df.groupby("Gene")[list(func_cols)].first()
 
     trait_summary = df.groupby("Gene").apply(summarize_traits)
-
+    print(trait_summary)
     result = (
         trait_summary
         .join(gene_info)  # 同为 Gene 索引

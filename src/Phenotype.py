@@ -32,7 +32,7 @@ def get_args(args):
     parser.add_argument("-i","--impute",required=False,choices=['knn', 'iterative_bayes', 'iterative_rf'],help="impute method,choose from ['knn', 'iterative_bayes', 'iterative_rf']")
     parser.add_argument("-c","--corr_threshold",help="Threshold of the cor bewteen two traits to divide into a same group,default=0.6",default=0.6,type=float)
     parser.add_argument("-z","--pc_threshold",help="Threshold of the PC1 bewteen two traits to divide into a same group,default=0.8",default=0.8,type=float)
-    parser.add_argument("-m","--miss_threshold",help="The maximum allowable proportion of missing values. Those exceeding this proportion will be discarded,default=0.2",type=float,default=0.2)
+    parser.add_argument("-m","--miss_threshold",help="The maximum allowable proportion of missing values. Those exceeding this proportion will be discarded,default=0.2",type=float,default=None)
     parser.add_argument("-f","--fig",help="Also output the groups corr-heatmap",action='store_true')
     parser.add_argument("-b","--bootstrap",help="Bootstrap times to run Cluster",default=500,type=int)
     parser.add_argument("--index",help="Add or change Index Name in output file",default="Sample",type=str)
@@ -48,7 +48,7 @@ def get_args(args):
     parser.add_argument("--n_neighbors",help="Impute: The number of neighbors to run KNNImputer,default=5",default=5,type=int)
     parser.add_argument("--max_iter",help="Impute: max iterative number for iterative_bayes and iterative_rf",default=5,type=int)
     parser.add_argument("--random_state",help="Impute: random state for iterative_bayes and iterative_rf",default=0,type=int)
-    parser.add_argument("--n_estimators",help="Impute: estimators number for iterative_bayes and iterative_rf",default=100,type=int)
+    parser.add_argument("--n_estimators",help="Impute: estimators number for iterative_bayes",default=100,type=int)
     parser.add_argument("-o","--out",help="Prefix of outfiles",type=str,default="out")   
     parsed_args = parser.parse_args(args)
     
@@ -60,6 +60,10 @@ def main(args=None):
     args=get_args(args)
 
     phe_data=load_data(args.phe)
+
+    if args.miss_threshold:
+        phe_data = missing_values(phe_data, args.miss_threshold,args.out)
+
 
     if args.globals or args.locals:
         run_phe(phe_data,args)
@@ -85,6 +89,9 @@ def main(args=None):
     elif args.combine:
         lis=[args.phe]+args.combine_files
         run_combine(file_list=lis, on_col=args.combine, output=f"{args.out}.combine.tsv", method=args.combine_method)
+
+
+
 
 
 
@@ -154,6 +161,7 @@ def row_statistics(df,output):
     stats_df = stats_df.reset_index()
     stats_df.rename(columns={'index': 'Info'}, inplace=True)
     stats_df.to_csv(f"{output}.stat_row.tsv",sep="\t",index=False)
+
 
 
 def run_matrix_group_ttest(df,args):
@@ -227,9 +235,9 @@ def run_matrix_transpose(phe_data,args):
 
 def run_phe(phe_data,args):
 
-    df_mis = missing_values(phe_data, args.miss_threshold,args.out)
+    #df_mis = missing_values(phe_data, args.miss_threshold,args.out)
 
-    df_mis_inpute = df_mis
+    df_mis_inpute = phe_data
 
     if args.globals:
         best_result, change_history = bootstrap_group_traits(df_mis_inpute, args.corr_threshold, args.pc_threshold, args.bootstrap)
@@ -552,7 +560,7 @@ def missing_values(df,miss_threshold,out):
     columns_to_drop = missing_rates[missing_rates > miss_threshold].index
     df.drop(columns=columns_to_drop, inplace=True) 
     print(f"Deletes {len(list(columns_to_drop))} traits column with a deletion rate greater than {miss_threshold*100:.0f}% : {list(columns_to_drop)}")
-    df.to_csv(f"{out}.dropmis.txt",sep="\t", na_rep="NA")
+    df.to_csv(f"{out}.dropmis.tsv",sep="\t", na_rep="NA")
     return df
 
 
@@ -565,7 +573,7 @@ def imputer_data(df,output="Out",method="iterative_rf",max_iter=5, random_state=
     elif method == 'iterative_bayes':
         X_filled = impute_iterative(X, estimator='BayesianRidge',max_iter=5, random_state=0,n_estimators=100)
     elif method == 'iterative_rf':
-        X_filled = impute_iterative(X, estimator='RandomForest',max_iter=5, random_state=0,n_estimators=100)
+        X_filled = impute_iterative(X, estimator='RandomForest',max_iter=5, random_state=0)
 
     df_filled = pd.DataFrame(X_filled, index=df.index, columns=df.columns)
     df_filled.to_csv(f'{output}.impute.{method}.tsv', sep='\t', float_format='%.4f')

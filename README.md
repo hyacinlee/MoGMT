@@ -8,7 +8,6 @@ Multi-omics genetic mapping tools
 
 Then :
 ```
-pip3 install -r requirements.txt
 
 cd ${your_path}
 git clone https://github.com/hyacinlee/MoGMT
