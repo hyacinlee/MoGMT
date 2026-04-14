@@ -1,4 +1,4 @@
-# MoGMT
+# IGMT
 Multi-omics genetic mapping tools
 
 ## Install
@@ -10,15 +10,15 @@ Then :
 ```
 
 cd ${your_path}
-git clone https://github.com/hyacinlee/MoGMT
+git clone https://github.com/hyacinlee/IGMT
 
-cd ./MoGMT
+cd ./IGMT
 pip3 install -r requirements.txt
 
-export PATH="${your_path}/MoGMT/:$PATH"
-export PYTHONPATH="${your_path}/MoGMT/src:$PYTHONPATH"
+export PATH="${your_path}/IGMT/:$PATH"
+export PYTHONPATH="${your_path}/IGMT/src:$PYTHONPATH"
 
-MoGMT.py -h
+IGMT.py -h
 
 ```
 
@@ -38,7 +38,7 @@ MoGMT.py -h
 ## Vcftools
 ```
 # rename vcf chromosome names 
-MoGMT.py Vcftools -v w220RNA.PASS.filter.strict.imputed.vcf --rename_chr --chr TGY.rename -o TGY.final.vcf
+IGMT.py Vcftools -v w220RNA.PASS.filter.strict.imputed.vcf --rename_chr --chr TGY.rename -o TGY.final.vcf
 ```
 
 
@@ -48,30 +48,30 @@ MoGMT.py Vcftools -v w220RNA.PASS.filter.strict.imputed.vcf --rename_chr --chr T
 ```
 Extract subset (by row or column):
 ------------------------------------------------------------
-MoGMT.py Phenotype -p example.raw.phe --subLines Candidate.triats.ids --out Candidate.triats
-MoGMT.py Phenotype -p example.raw.phe --subColumns Candidate.sample.ids --out Candidate.sample
+IGMT.py Phenotype -p example.raw.phe --subLines Candidate.triats.ids --out Candidate.triats
+IGMT.py Phenotype -p example.raw.phe --subColumns Candidate.sample.ids --out Candidate.sample
 
 
 Run statistics by row:
 ------------------------------------------------------------
-MoGMT.py Phenotype -p example.raw.phe --stat -o example
+IGMT.py Phenotype -p example.raw.phe --stat -o example
 
 
 Combine "combine_files" into the base file (-p):
 ------------------------------------------------------------
-MoGMT.py Phenotype --combine Sample --combine_method Base -p example.raw.phe --combine_files new.traits1.txt new.traits2.txt  --out Combine
+IGMT.py Phenotype --combine Sample --combine_method Base -p example.raw.phe --combine_files new.traits1.txt new.traits2.txt  --out Combine
 
 
 Run imputation only
 ------------------------------------------------------------
-MoGMT.py Phenotype -p example.mask5.masked.tsv -i knn --n_neighbors 10 -o example
-MoGMT.py Phenotype -p example.mask5.masked.tsv -i iterative_bayes  --max_iter -o example
-MoGMT.py Phenotype -p example.mask5.masked.tsv -i iterative_bayes  -o example
+IGMT.py Phenotype -p example.mask5.masked.tsv -i knn --n_neighbors 10 -o example
+IGMT.py Phenotype -p example.mask5.masked.tsv -i iterative_bayes  --max_iter -o example
+IGMT.py Phenotype -p example.mask5.masked.tsv -i iterative_bayes  -o example
 
 
 Column-wise group mean calculation (typically used for handling multiple replicates):
 ------------------------------------------------------------------------------------------------------------------------
-MoGMT.py Phenotype -p gene.expression.phe --mean group.txt --out  gene.expression 
+IGMT.py Phenotype -p gene.expression.phe --mean group.txt --out  gene.expression 
 head group.txt 
 colum_name1 group1
 colum_name2 group1
@@ -80,7 +80,7 @@ colum_name4 group2
 ...
 
 # t-test
-MoGMT.py Phenotype -p gene.expression.grouped.tsv --group_ttest t-group.txt --out gene.expression
+IGMT.py Phenotype -p gene.expression.grouped.tsv --group_ttest t-group.txt --out gene.expression
 head t-group.txt
 group1  Hight
 group2  Hight
@@ -95,12 +95,12 @@ group4  Low
 ```
 Global clustering with 500 iterations
 ------------------------------------------------------------
-MoGMT.py Phenotype -p ../example.raw.phe -g -c 0.7 -z 0.8 -o meta.know.C70.Z80 -b 500
+IGMT.py Phenotype -p ../example.raw.phe -g -c 0.7 -z 0.8 -o meta.know.C70.Z80 -b 500
 
 
 Use the specified trait for local clustering (search all traits for those similar to `-l`)
 ------------------------------------------------------------
-MoGMT.py Phenotype -p ../example.raw.phe -l local.txt -c 0.7 -z 0.8 -o meta.know.C70.Z80.local -b 20
+IGMT.py Phenotype -p ../example.raw.phe -l local.txt -c 0.7 -z 0.8 -o meta.know.C70.Z80.local -b 20
 head local.txt 
 YL_cmp1651
 YL_cmp1307
@@ -116,14 +116,14 @@ YL_cmp622
 ## GWAS 
 ```
 # Basic GWAS
-MoGMT.py Emmax -v ./snp.dep5.mis90.maf5.simply.vcf -c PCA.cov -p phe.txt
+IGMT.py Emmax -v ./snp.dep5.mis90.maf5.simply.vcf -c PCA.cov -p phe.txt
 
 # If there are too many SNPs (> 2000,000), use parallel processing to improve efficiency
-MoGMT.py Emmax -v ./snp.dep5.mis90.maf5.simply.vcf -c PCA.cov -p phe.txt --split chrom.lst
+IGMT.py Emmax -v ./snp.dep5.mis90.maf5.simply.vcf -c PCA.cov -p phe.txt --split chrom.lst
 
 # After completion, adjust the threshold and re-filter the results
 rm -rf GWAS.outputs.done  GWAS.manhantun.done
-MoGMT.py Emmax -v ./snp.dep5.mis90.maf5.simply.vcf -c PCA.cov -p phe.txt --split chrom.lst -s 0.000001 
+IGMT.py Emmax -v ./snp.dep5.mis90.maf5.simply.vcf -c PCA.cov -p phe.txt --split chrom.lst -s 0.000001 
 
 # Sample File (The order is not important)
 head PCA.cov 
@@ -148,7 +148,7 @@ lg5
 ## Evidence
 cmd:
 ```
-MoGMT.py Evidence -i ../03.Gwas_singleTriat/Traits.Pos2.emmax.ps.significant.tsv -p ../03.Gwas_singleTriat/Traits.Pos2.phe -o Traits.Pos2.200k -a ../../../../../02.Genotype/02.Genotype_consGenome/03.Annovar/snp.dep5.mis90.maf5.simply -f /work/minghui/Tea_reseq/3.Reseq_FDDB/00.data/refgenome/ref_one/Function.swissport.txt -b /work/minghui/Tea_reseq/3.Reseq_FDDB/00.data/refgenome/ref_one/FD.mRNA.bed -v ../../../4.Area.Grouped.cons/data/snp.dep5.mis90.maf5.simply.vcf.gz --regions 1 200 --regions_score 2 1  -e ../../../../00.data/Evidence/filter.eqtl.cis.txt -w ../../../../00.data/Evidence/weight.txt
+IGMT.py Evidence -i ../03.Gwas_singleTriat/Traits.Pos2.emmax.ps.significant.tsv -p ../03.Gwas_singleTriat/Traits.Pos2.phe -o Traits.Pos2.200k -a ../../../../../02.Genotype/02.Genotype_consGenome/03.Annovar/snp.dep5.mis90.maf5.simply -f /work/minghui/Tea_reseq/3.Reseq_FDDB/00.data/refgenome/ref_one/Function.swissport.txt -b /work/minghui/Tea_reseq/3.Reseq_FDDB/00.data/refgenome/ref_one/FD.mRNA.bed -v ../../../4.Area.Grouped.cons/data/snp.dep5.mis90.maf5.simply.vcf.gz --regions 1 200 --regions_score 2 1  -e ../../../../00.data/Evidence/filter.eqtl.cis.txt -w ../../../../00.data/Evidence/weight.txt
 ```
 
 #### Weight file
@@ -167,7 +167,7 @@ YL_cmp828       gene    1       ./add/Traits.YL_cmp828.sign.BasicGene.xls
 
 #### plot manhantun
 ```
-MoGMT.py Visualize -m manha --site_value ../03.Gwas_singleTriat/Traits.Pos2.emmax.ps.tsv --hightlight candidate.genes.heightlight --out Traits.Pos2.heightlight
+IGMT.py Visualize -m manha --site_value ../03.Gwas_singleTriat/Traits.Pos2.emmax.ps.tsv --hightlight candidate.genes.heightlight --out Traits.Pos2.heightlight
 
 
 cat heightlight file:
@@ -180,7 +180,7 @@ lg3_83862148    AAP3    red
 
 #### plot boxplot
 ```
-MoGMT.py Visualize -m stat --df Test.group.combine.tsv --box -o Test.group.combine --xData Group --yData Pos2 --ttest CSA1,CSS1 CSA1,CSS2 CSA2,CSS2 CSA2,CSS1 --figsize 8 8 --group_color Group.color
+IGMT.py Visualize -m stat --df Test.group.combine.tsv --box -o Test.group.combine --xData Group --yData Pos2 --ttest CSA1,CSS1 CSA1,CSS2 CSA2,CSS2 CSA2,CSS1 --figsize 8 8 --group_color Group.color
 
 cat Group.color 
 CSS1    #3274a1
@@ -193,7 +193,7 @@ CSA2    #8338EC
 
 #### plot Cor
 ```
-MoGMT.py Visualize -m stat --df Test.group.combine.tsv --cor -o Test.group.combine --figsize 8 8 --exc Group --plot Row
+IGMT.py Visualize -m stat --df Test.group.combine.tsv --cor -o Test.group.combine --figsize 8 8 --exc Group --plot Row
 ```
 
 
@@ -209,7 +209,7 @@ Pos15   ../../03.Gwas_singleTriat/Traits.Pos15.500k.sign.WeightGenes.xls
 Pos35   ../../03.Gwas_singleTriat/Traits.Pos35.500k.sign.WeightGenes.xls
 Pos53   ../../03.Gwas_singleTriat/Traits.Pos53.500k.sign.WeightGenes.xls
 
-MoGMT.py Candidate  -i Coloc.txt --co_local  -o Trait27.express --fit_exp "G128!=None"
+IGMT.py Candidate  -i Coloc.txt --co_local  -o Trait27.express --fit_exp "G128!=None"
 
 ```
 
@@ -219,10 +219,10 @@ MoGMT.py Candidate  -i Coloc.txt --co_local  -o Trait27.express --fit_exp "G128!
 ## BSA
 ```
 # BSA in single SNP site:
-MoGMT.py BulkSegAna -v snp.filter.vcf -s1 Low -s2 High -t ed -s top1 top5 
+IGMT.py BulkSegAna -v snp.filter.vcf -s1 Low -s2 High -t ed -s top1 top5 
 
 # BSA in a 50kb-step and 500kb-windows sliding windows:
-MoGMT.py BulkSegAna -v snp.filter.vcf -s1 Low -s2 High -t ed -s top1  -step 50  -wind 500 -minSite 5  -minDepth 10
+IGMT.py BulkSegAna -v snp.filter.vcf -s1 Low -s2 High -t ed -s top1  -step 50  -wind 500 -minSite 5  -minDepth 10
 
 
 ```
@@ -235,13 +235,13 @@ MoGMT.py BulkSegAna -v snp.filter.vcf -s1 Low -s2 High -t ed -s top1  -step 50  
 # Although the covariance file (-c) is not mandatory, we strongly recommend using it.
 
 # Only Run two traits:
-MoGMT.py TransAsso -e DASZ.220.exp.filter1.sub_set.tsv -p ../GWAS.phe  -t Group1 Group2   -c ./PCA.matrix
+IGMT.py TransAsso -e DASZ.220.exp.filter1.sub_set.tsv -p ../GWAS.phe  -t Group1 Group2   -c ./PCA.matrix
 
 # Run all traits in .phe file with parallel threads:
-MoGMT.py TransAsso -e DASZ.220.exp.filter1.sub_set.tsv -p ../GWAS.phe --threads 24  -c ./PCA.matrix
+IGMT.py TransAsso -e DASZ.220.exp.filter1.sub_set.tsv -p ../GWAS.phe --threads 24  -c ./PCA.matrix
 
 # Fig out candidate genes (Only the gene ID in the first column is needed)
-MoGMT.py TransAsso -e DASZ.220.exp.filter1.sub_set.tsv -p ../GWAS.phe  -t Group3 -c ./PCA.matrix --figGenes TransAsso.Group3.signal.txt
+IGMT.py TransAsso -e DASZ.220.exp.filter1.sub_set.tsv -p ../GWAS.phe  -t Group3 -c ./PCA.matrix --figGenes TransAsso.Group3.signal.txt
 ```
 
 
